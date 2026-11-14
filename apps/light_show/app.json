@@ -2,7 +2,7 @@
   "id": "light_show",
   "title": "Light Show",
   "description": "FLM02-only light show and LED naming with selectable animated effects and guarded tests. Removed redundant manual lights-off guide; no vehicle-wide light-off commands.",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "vendor": "custom",
   "loggingId": "OAL9",
   "iconGlyph": "LS",
@@ -17,7 +17,8 @@
       ]
     },
     "de.bmw.infotainment.vehicle.Vehicle2": {
-      "statusCarSpeed2": "rs"
+      "statusCarSpeed2": "rs",
+      "statusLightStatus": "rs"
     },
     "de.bmw.infrastructure.VehicleInformation": {
       "statusGearboxDrive": "s",
@@ -310,6 +311,11 @@
           "button",
           "BTN_DIAG_STOP",
           "STOP / return lights to vehicle"
+        ],
+        [
+          "button",
+          "BTN_LIGHT_PROBE",
+          "Read-only headlight lever test"
         ],
         [
           "button",
@@ -826,6 +832,68 @@
           "button",
           "BTN_CANCEL_CLEAR",
           "Cancel"
+        ]
+      ]
+    },
+    {
+      "name": "LIGHT_PROBE",
+      "kind": "menu",
+      "title": "Diagnostics | light signal",
+      "items": [
+        [
+          "text3",
+          "PROBE_INTRO",
+          "Read-only raw BMW light status. Park securely in P, stay on private property. No lamp commands; not a verified lever input."
+        ],
+        [
+          "text3",
+          "PROBE_STATUS",
+          "No capture started"
+        ],
+        [
+          "button",
+          "BTN_PROBE_START",
+          "Start 60-second capture"
+        ],
+        [
+          "button",
+          "BTN_PROBE_RELEASED",
+          "Mark: lever released"
+        ],
+        [
+          "button",
+          "BTN_PROBE_PULLED",
+          "Mark: lever pulled"
+        ],
+        [
+          "button",
+          "BTN_PROBE_HELD",
+          "Mark: held over 3 seconds"
+        ],
+        [
+          "button",
+          "BTN_PROBE_LATCHED",
+          "Mark: high beam latched"
+        ],
+        [
+          "button",
+          "BTN_PROBE_STOP",
+          "Stop capture"
+        ],
+        [
+          "button",
+          "BTN_PROBE_SAVE",
+          "Stop and save diagnostic JSON"
+        ],
+        [
+          "scroll",
+          "PROBE_EVENTS",
+          "No signal events"
+        ],
+        [
+          "button",
+          "BTN_PROBE_BACK",
+          "Back to diagnostics"
         ]
       ]
     }

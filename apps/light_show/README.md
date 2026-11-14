@@ -1,4 +1,10 @@
-# Light Show 0.3.3
+# Light Show 0.3.4
+
+## 0.3.4 – Read-only light status recorder
+
+Diagnostics → Read-only headlight lever test captures the unconverted BMW Vehicle2 `statusLightStatus` field for up to 60 seconds / 500 events. The BMW x_call SDK maps `headlightsStatus` to this field, but its conversion reports constant OFF values. Actual lever state and distinction from continuous high beam are not verified. Mark the observed lever state manually, compare the timestamped changes, and export the diagnostic JSON. No automatic trigger or lamp-control commands have been added. Existing park/standstill safety guards remain unchanged. The recorder stops on leaving its screen or losing the parked state. Normal vehicle lighting is unaffected by this feature.
+
+
 
 ## 0.3.3 – Remove redundant dark-stage menu and repository footer
 

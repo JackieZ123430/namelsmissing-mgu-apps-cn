@@ -458,7 +458,7 @@ test('Real TASU transport serializes third-brake-light control via BDC, not a gu
 
 test('FLM02 OEM routine uses only the bounded channel START candidate and captured StopRoutine', () => {
     const spec = require(path.join(app, 'app.json'));
-    assert.strictEqual(spec.version, '0.3.3');
+    assert.strictEqual(spec.version, '0.3.4');
     assert.deepStrictEqual(F.start(7), [0x01, 0xA5, 0x4B, 0x07, 60, 2]);
     assert.deepStrictEqual(F.start(7, 100, 5), [0x01, 0xA5, 0x4B, 0x07, 100, 5]);
     assert.strictEqual(F.isPermittedRoutine(F.start(7, 100, 5)), true);
@@ -641,12 +641,25 @@ test('Legacy dark-stage guide and old repository footer are disabled in Light Sh
     const spec=require(path.join(app,'app.json'));
     const ids=spec.screens.flatMap(s=>(s.items||[]).map(item=>item[1]));
     assert.strictEqual(ids.length,new Set(ids).size);
-    assert.strictEqual(spec.version,'0.3.3');
+    assert.strictEqual(spec.version,'0.3.4');
     assert.strictEqual(spec.showRepoCredits,false);
     assert(!spec.screens.some(s=>s.name==='DARK_PREP'));
     assert(!ids.some(x=>/^BTN_DARK_/.test(x)||/^DARK_PREP/.test(x)));
     for(const id of ['BTN_SHOW_SETUP','BTN_SHOW_START','BTN_LABEL_HOME','BTN_LABEL_TEST','BTN_STOP'])
         assert(ids.includes(id),'Expected retained feature: '+id);
+});
+
+test('Light signal recorder remains read-only, captures raw changes and expires',()=>{
+    const Probe=require(path.join(app,'light-probe'));
+    let now=1000;const p=new Probe(()=>now);p.start();
+    p.mark('released');p.feed({raw:0});now+=500;p.feed({raw:0});p.mark('pulled');
+    now+=10;p.feed({raw:1});
+    assert.strictEqual(p.snapshot().sampleCount,3);
+    assert.strictEqual(p.snapshot().events.length,4);
+    assert.strictEqual(p.snapshot().leverVerified,false);
+    now+=60000;p.tick();assert.strictEqual(p.snapshot().active,false);
+    const spec=require(path.join(app,'app.json'));
+    assert.strictEqual(spec.signals['de.bmw.infotainment.vehicle.Vehicle2'].statusLightStatus,'rs');
 });
 
 (async () => {

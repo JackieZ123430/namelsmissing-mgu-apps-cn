@@ -8,6 +8,7 @@ const Guard = require('./guard');
 const Journal = require('./journal');
 const Engine = require('./engine');
 const F = require('./flm-control');
+const LightProbe = require('./light-probe');
 const {ChannelLabels, PRESETS} = require('./channel-labels');
 const {ShowConfig, PATTERNS, PWM, PULSE, GAP, CYCLES} = require('./flm-show');
 
@@ -15,6 +16,7 @@ mgu.run({
     async start(ctx) {
         const {ui,settings,log} = ctx;
         const journal = new Journal(ctx.dataDir);
+        const lightProbe = new LightProbe();
         const names = new ChannelLabels(ctx.dataDir);
         const show = new ShowConfig(ctx.dataDir);
         const observationsPath = path.join(ctx.dataDir,'light-show-observations.json');
@@ -165,7 +167,7 @@ mgu.run({
         function diagnostics() {
             const s=engine.status(),g=guard.snapshot();
             const lines=[
-                'Light Show 0.3.3 - FLM02 animations and diagnostics',
+                'Light Show 0.3.4 - FLM02 animations and read-only light signal capture',
                 'State: '+s.state+' | '+s.note,
                 'TASU: '+(link.available?'available':'unavailable')+
                     ' | BDC index: '+(link.index||'not read'),
@@ -198,9 +200,10 @@ mgu.run({
             try {
                 let preview=null,previewError=null;
                 try {preview=show.plan(names,observations);}catch(e){previewError=e.message;}
-                const report={app:'light_show',version:'0.3.3',at:new Date().toISOString(),
+                const report={app:'light_show',version:'0.3.4',at:new Date().toISOString(),
                     physicalEffectVerified:false, status:engine.status(),
                     guard:guard.snapshot(),flmSettings:flmConfig(),
+                    lightSignalProbe:lightProbe.snapshot(),
                     showSettings:show.state,showPlan:preview,showPlanError:previewError,
                     channelMappings:names.snapshot(observations),
                     recoveryPending:journal.pending(),bdcIndex:link.index,
@@ -265,6 +268,26 @@ mgu.run({
             .forEach(id=>handler(id,()=>engine.stop('Manual STOP')));
         handler('BTN_DIAG',()=>{lastDiagnostic=diagnostics();ui.text('DIAG_TEXT',lastDiagnostic);return ui.open('DIAGNOSTICS');});
         handler('BTN_EXPORT',saveLog);
+        function updateProbe(){
+            const p=lightProbe.snapshot();
+            ui.text('PROBE_STATUS',(p.active?'Recording':'Stopped')+' | '+p.reason+
+                ' | raw samples '+p.sampleCount+' | changes/markers '+p.events.length+
+                '\nRaw signal only; lever interpretation not verified.');
+            ui.text('PROBE_EVENTS',p.events.slice(-12).map(e=>e.ms+' ms '+e.kind+
+                ' '+JSON.stringify(e.value)).join('\n')||'No raw values or markers yet.');
+        }
+        handler('BTN_LIGHT_PROBE',()=>{updateProbe();return ui.open('LIGHT_PROBE');});
+        handler('BTN_PROBE_START',()=>{
+            ensureIdle();
+            if(journal.pending()||guard.reason())throw new Error('Park in P and resolve any pending light test first');
+            lightProbe.start();updateProbe();
+        });
+        [['BTN_PROBE_RELEASED','released'],['BTN_PROBE_PULLED','pulled'],
+         ['BTN_PROBE_HELD','held over 3s'],['BTN_PROBE_LATCHED','high beam latched']]
+            .forEach(([id,label])=>handler(id,()=>{lightProbe.mark(label);updateProbe();}));
+        handler('BTN_PROBE_STOP',()=>{lightProbe.stop();updateProbe();});
+        handler('BTN_PROBE_SAVE',()=>{lightProbe.stop();saveLog();return ui.open('DIAGNOSTICS');});
+        handler('BTN_PROBE_BACK',()=>{lightProbe.stop('Left capture screen');return ui.open('DIAGNOSTICS');});
         handler('BTN_HEADLAMPS',async()=>{await engine.inspectHeadlamps();ui.text('DIAG_TEXT',diagnostics());});
         handler('BTN_CHANNEL_OVERVIEW',()=>{updateOverview();return ui.open('CHANNEL_OVERVIEW');});
         handler('BTN_OVERVIEW_BACK',()=>ui.open('DIAGNOSTICS'));
@@ -402,14 +425,14 @@ mgu.run({
             clearTimeout(hiddenTimer);
             hiddenTimer=setTimeout(()=>{
                 const pages=['MAIN','SHOW_SETUP','SHOW_PREVIEW','PLAYLIST','POOL_CHANNELS',
-                    'DIAGNOSTICS','CHANNEL_OVERVIEW','LABEL_INDEX','LABEL_CHANNELS',
+                    'DIAGNOSTICS','LIGHT_PROBE','CHANNEL_OVERVIEW','LABEL_INDEX','LABEL_CHANNELS',
                     'LABEL_EDITOR','FLM_INDEX','FLM_CHANNELS','OUTPUT_OBSERVE','CONFIRM_LIGHTS'];
                 if(!pages.some(name=>ui.isVisible(name))&&engine.run)engine.stop('App closed');
             },250);
         });
         if(ctx.app&&ctx.app.on)ctx.app.on('shutdown',()=>engine.stop('Head unit shutting down'));
         process.on('SIGTERM',()=>{engine.stop('App stopped').then(()=>process.exit(0));});
-        guard.init(ctx.signals,log).catch(e=>log.warn('Light Show vehicle signals: '+e));
+        guard.init(ctx.signals,log,v=>lightProbe.feed(v)).catch(e=>log.warn('Light Show vehicle signals: '+e));
         let recoveryTried=false;
         const recover=()=>{
             if(!recoveryTried&&journal.pending()&&link.available&&!engine.run){
@@ -417,7 +440,13 @@ mgu.run({
             }
         };
         link.init().then(recover).catch(e=>log.warn('Light Show diagnostic init: '+e));
-        setInterval(()=>{changed();recover();},200);
+        setInterval(()=>{
+            lightProbe.tick();
+            if(lightProbe.active && (guard.reason()||engine.run||!ui.isVisible('LIGHT_PROBE')))
+                lightProbe.stop('Vehicle state or screen changed');
+            if(ui.isVisible('LIGHT_PROBE'))updateProbe();
+            changed();recover();
+        },200);
         refresh();
     }
 });
