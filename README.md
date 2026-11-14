@@ -30,7 +30,7 @@ These apps are **Experimental**. They are still being developed or tested, and s
 | [**Video Hub**](apps/mgu_video_hub/README.md) (`mgu_video_hub`) | **Experimental** | Play local videos and work with YouTube links. Playback requires additional software; online videos also need an internet connection. |
 | [**Equalizer DSP**](apps/equalizer/README.md) (`equalizer`) | **Experimental** | Adjust audio with seven parametric EQ bands, gain, frequency, Q and saved presets. Stock CarPlay, radio and Bluetooth audio are not yet routed through the DSP. |
 | [**Light Show**](apps/light_show/README.md) (`light_show`) | **Experimental · 0.3.4** | FLM02 parked light effects, channel naming/testing and read-only raw headlight status capture. No automatic lever-triggered light control. |
-| [**Light Flasher**](apps/light_flasher/README.md) (`light_flasher`) | **Experimental · 0.1.0** | Read-only stalk diagnosis and simulated adjustable flash patterns; no live light actuation. |
+| [**Light Flasher**](apps/light_flasher/README.md) (`light_flasher`) | **Experimental · 0.1.1** | Read-only stalk diagnosis and simulated adjustable flash patterns; no live light actuation. |
 
 ## Installation
 

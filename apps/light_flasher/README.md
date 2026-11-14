@@ -1,4 +1,10 @@
-# Light Flasher 0.1.0
+# Light Flasher 0.1.1
+
+## 0.1.1 – Explicit connection preflight
+
+The new Check BDC connection button checks F150 identity and reads E3B8 once. Start first runs the same check and begins the 60-second timer only after both succeed. The display distinguishes disabled mode, park guard, TASU unavailable, identity failure, and E3B8 failure. Errors remain visible, and a saved JSON report includes request/response bytes, timings and transport errors even if preflight fails. No new diagnostic services or actuator control are introduced.
+
+
 
 Separate experimental ID7 app. **Read-only diagnostics and simulated pattern preview only.** No live flash actuator, no lever-triggered effect, no background control. The Enable setting controls diagnostic recording.
 

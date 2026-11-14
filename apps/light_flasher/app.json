@@ -2,7 +2,7 @@
   "id": "light_flasher",
   "title": "Light Flasher",
   "description": "Read-only BDC stalk and headlamp diagnostics with configurable simulated flash patterns. No vehicle light actuation.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "vendor": "custom",
   "loggingId": "OLF1",
   "iconGlyph": "LF",
@@ -152,6 +152,11 @@
           "text3",
           "DIAG_STATE",
           "Not recording"
+        ],
+        [
+          "button",
+          "BTN_CHECK",
+          "Check BDC connection (read only)"
         ],
         [
           "button",

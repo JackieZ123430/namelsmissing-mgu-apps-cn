@@ -4,20 +4,24 @@ const {Diag,replyTo}=require('./tasu');
 const DID=[0xE3,0xB8], IDENT=[0xF1,0x50];
 const hex=a=>Array.from(a||[]).map(x=>x.toString(16).toUpperCase().padStart(2,'0')).join(' ');
 class Reader {
- constructor(signals,log){this.diag=new Diag(signals,log);this.diag.quiet=true;this.busy=false;this.index=null}
+ constructor(signals,log){this.diag=new Diag(signals,log);this.diag.quiet=true;this.busy=false;this.index=null;this.trace=[];this.identityReply=null;this.diag.on('available',up=>{if(!up)this.index=null})}
  async init(){await this.diag.init();return this}
  async read(did){
    if(did!==DID&&did!==IDENT)throw Error('Read-only DID not allowed');
    if(this.busy||!this.diag.available)throw Error('TASU unavailable or busy');
    this.busy=true;
+   const record={at:new Date().toISOString(),target:'40',tx:hex([0x22,...did])},start=Date.now();
+   this.trace.push(record);if(this.trace.length>150)this.trace.shift();
    try{
-     const reply=await this.diag.physical(0x40,0x22,did,500,replyTo(0x22,did),{maxRetries:0,callTimeoutMs:700,hardTimeoutMs:1200,pendingTimeoutMs:800});
-     if(!reply||!reply.length)throw Error('Read timed out');
-     if(reply[0]!==0x62||reply[1]!==did[0]||reply[2]!==did[1])throw Error('Read refused: '+hex(reply));
+     const reply=await this.diag.physical(0x40,0x22,did,800,replyTo(0x22,did),{maxRetries:0,callTimeoutMs:1000,hardTimeoutMs:1800,pendingTimeoutMs:1000});
+     record.rx=reply&&reply.length?hex(reply):'TIMEOUT';
+     if(!reply||!reply.length)throw Error(record.tx+' timed out');
+     if(reply[0]!==0x62||reply[1]!==did[0]||reply[2]!==did[1])throw Error(record.tx+' refused: '+record.rx);
      return reply;
-   }finally{this.busy=false}
+   }catch(e){record.error=String(e.message||e);throw e}
+   finally{record.ms=Date.now()-start;this.busy=false}
  }
- async identify(){this.index=null;const r=await this.read(IDENT);this.index=hex(r.slice(3));if(this.index!=='0F 26 80')throw Error('Unsupported BDC identity: '+this.index);return this.index}
+ async identify(){this.index=null;this.identityReply=null;const r=await this.read(IDENT);this.identityReply=hex(r);const index=hex(r.slice(3));if(index!=='0F 26 80')throw Error('Unsupported BDC identity: '+index+' (raw '+this.identityReply+')');this.index=index;return index}
  async stalk(){if(this.index!=='0F 26 80')throw Error('Identify BDC first');return this.read(DID)}
 }
 class Capture{
