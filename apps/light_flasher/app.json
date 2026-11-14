@@ -2,7 +2,7 @@
   "id": "light_flasher",
   "title": "Light Flasher",
   "description": "Read-only BDC stalk and headlamp diagnostics with configurable simulated flash patterns. No vehicle light actuation.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "vendor": "custom",
   "loggingId": "OLF1",
   "iconGlyph": "LF",
@@ -160,6 +160,11 @@
         ],
         [
           "button",
+          "BTN_FEEDBACK",
+          "FLM02 feedback - investigate OEM control"
+        ],
+        [
+          "button",
           "BTN_START",
           "Start 60-second read-only test (P)"
         ],
@@ -224,6 +229,53 @@
           "button",
           "BTN_PREVIEW_BACK",
           "Back"
+        ]
+      ]
+    },
+    {
+      "name": "FLM_FEEDBACK",
+      "kind": "menu",
+      "title": "Light Flasher | FLM feedback",
+      "items": [
+        [
+          "text3",
+          "FB_HELP",
+          "Read only. Park in P on private property, clear area in front. Set OEM high beam manually. Keep each state until sample completes."
+        ],
+        [
+          "text3",
+          "FB_STATUS",
+          "No FLM samples recorded"
+        ],
+        [
+          "button",
+          "BTN_FB_OFF",
+          "1. Read with OEM high beam OFF"
+        ],
+        [
+          "button",
+          "BTN_FB_ON",
+          "2. Read with OEM steady high beam ON"
+        ],
+        [
+          "button",
+          "BTN_FB_RELEASE",
+          "3. Read after switching high beam OFF"
+        ],
+        [
+          "button",
+          "BTN_FB_SAVE",
+          "Save diagnostic JSON"
+        ],
+        [
+          "scroll",
+          "FB_LOG",
+          "Raw feedback"
+        ],
+        [
+          "button",
+          "BTN_FB_BACK",
+          "Back to diagnostics"
         ]
       ]
     }

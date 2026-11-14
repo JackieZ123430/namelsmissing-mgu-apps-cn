@@ -1,4 +1,12 @@
-# Light Flasher 0.1.1
+# Light Flasher 0.1.2
+
+## 0.1.2 – Read-only FLM feedback investigation
+
+Offline inspection of both supplied FLM02 PRGs identifies FLM_KANAL_ERGEBNISSE (D6DB), FLM_FUNKTION_LICHTVERTEILUNG_ERGEBNISSE (D7A7) and FLM_ZUORDNUNG_SENSOREN_KANAELE (D9FC). D6DB includes channel PWM, current and voltage fields; it may reflect diagnostic routine results rather than live OEM output. D7A7 reports function-related feedback. No physical suppression authority or live measurement is assumed. FLM_KANAL has a PWM argument and seconds duration, but a PWM value of zero is not verified to override normal lighting. No suppression or write commands are implemented.
+
+Diagnostics > FLM02 feedback: compare OFF / steady OEM high beam ON / OFF again using the normal vehicle controls in P on private property. Verify both FLM identities before reading the three DIDs on each side. Raw replies and errors, combined status before/after, and per-result timestamps are saved to the normal JSON export. Only service 22 is sent; no session changes, actuator routines or coding.
+
+
 
 ## 0.1.1 – Explicit connection preflight
 

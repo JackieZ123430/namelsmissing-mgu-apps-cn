@@ -5,12 +5,17 @@ const {Reader,Capture}=require('./probe');
 mgu.run({async start(ctx){
  const {ui,settings,log}=ctx, capture=new Capture(),reader=new Reader(ctx.signals,log);
  let lastCombined=null, lastRead=0, pending=false, generation=0, exported='', closing=false, connectionState='Not checked', lastError='';
+ const feedback=[];let feedbackStatus='No FLM samples recorded';
  const enabled=()=>settings.get('enabled')===true;
  const guard=new Guard(Date.now,()=>{});
  const stop=(why)=>{generation++;capture.stop(why);};
  const update=()=>{
    const g=guard.snapshot(),c=capture.snapshot();
    ui.text('STATUS',(enabled()?'Diagnostic mode ON':'Diagnostic mode OFF')+' | physical flashing unavailable');
+   if(ui.isVisible('FLM_FEEDBACK')){
+     ui.text('FB_STATUS',feedbackStatus+' | '+(g.blockedBy||'P / stationary')+' | Combined light: '+(lastCombined||'unknown')+'\n'+(lastError||'Read-only, no light commands'));
+     ui.text('FB_LOG',feedback.slice(-3).map(f=>f.label+' | '+f.before+' -> '+f.after+'\n'+f.results.map(z=>z.side+' '+(z.did||z.kind)+' '+(z.error||z.reply)).join('\n')).join('\n\n')+(exported?'\nSaved: '+exported:''));
+   }
    if(!ui.isVisible('DIAGNOSTICS'))return;
    ui.text('DIAG_STATE',c.reason+' | '+connectionState+
        '\nTASU: '+(reader.diag.available?'available':(reader.diag.error||'not available'))+
@@ -22,7 +27,9 @@ mgu.run({async start(ctx){
       '\n'+c.events.slice(-24).map(e=>e.ms+' ms '+e.kind+' '+JSON.stringify(e.value)).join('\n')+
       (exported?'\nSaved: '+exported:''));
  };
- const valid=()=>!closing&&enabled()&&!guard.reason()&&ui.isVisible('DIAGNOSTICS');
+ const safe=()=>!closing&&enabled()&&!guard.reason();
+ const valid=()=>safe()&&ui.isVisible('DIAGNOSTICS');
+ const validFeedback=()=>safe()&&ui.isVisible('FLM_FEEDBACK');
  const tick=async()=>{
    if(capture.active&&(!valid()||Date.now()-capture.started>=60000))stop('Capture ended: state change or time limit');
    if(capture.active&&!pending&&Date.now()-lastRead>=750){
@@ -61,15 +68,39 @@ mgu.run({async start(ctx){
  [['BTN_NEUTRAL','neutral / released'],['BTN_PULL','pull flasher'],['BTN_PUSH','push high beam'],['BTN_LATCH','continuous high beam / released']]
  .forEach(([id,x])=>handler(id,()=>{capture.mark(x);update()}));
  handler('BTN_STOP',()=>{stop('Stopped manually');update()});
- handler('BTN_SAVE',()=>{
+ function saveReport(){
+   if(pending)throw Error('Wait for the read to finish before saving');
    stop('Saved');const file=path.join(ctx.dataDir,'light-flasher-diagnostics.json');
-   const report={app:'light_flasher',version:'0.1.1',at:new Date().toISOString(),guard:guard.snapshot(),
+   const report={app:'light_flasher',version:'0.1.2',at:new Date().toISOString(),guard:guard.snapshot(),
      bdcIndex:reader.index,identityReply:reader.identityReply,connectionState,lastError,
      tasuAvailable:reader.diag.available,tasuError:reader.diag.error||null,trace:reader.trace.slice(),
-     physicalActuation:false,combinedSignal:lastCombined,capture:capture.snapshot()};
+     physicalActuation:false,combinedSignal:lastCombined,capture:capture.snapshot(),flmFeedback:feedback.slice(),feedbackStatus};
    fs.writeFileSync(file+'.tmp',JSON.stringify(report,null,2));fs.renameSync(file+'.tmp',file);exported=file;update();
- });
+ }
+ handler('BTN_SAVE',saveReport);
+ handler('BTN_FB_SAVE',saveReport);
  handler('BTN_BACK',()=>{stop('Left diagnostics');return ui.open('MAIN')});
+ handler('BTN_FEEDBACK',()=>{if(pending||capture.active)throw Error('Stop other capture first');return ui.open('FLM_FEEDBACK')});
+ async function sampleFeedback(label){
+   if(!validFeedback())throw Error('Enable diagnostics and park in P');
+   if(pending||capture.active)throw Error('Another read is in progress');
+   if(!reader.diag.available)throw Error('TASU unavailable');
+   pending=true;lastError='';exported='';
+   const token=++generation,sample={label,at:new Date().toISOString(),before:lastCombined,after:null,results:[],complete:false};
+   feedback.push(sample);if(feedback.length>12)feedback.shift();
+   feedbackStatus='Reading '+label+'; wait for completion';update();
+   const allowed=()=>token===generation&&validFeedback();
+   try{
+     await reader.flmFeedback(allowed,z=>{sample.results.push({...z,at:new Date().toISOString(),combinedSignal:lastCombined});update()});
+     sample.complete=allowed()&&sample.results.filter(x=>x.kind==='feedback').length===6;
+   }finally{
+     sample.after=lastCombined;sample.endedAt=new Date().toISOString();
+     feedbackStatus=sample.complete?'Sample complete; raw feedback not decoded':'Sample incomplete; inspect replies or errors';
+     pending=false;update();
+   }
+ }
+ [['BTN_FB_OFF','OEM high beam off'],['BTN_FB_ON','OEM steady high beam on'],['BTN_FB_RELEASE','OEM high beam off again']].forEach(([id,label])=>handler(id,()=>sampleFeedback(label)));
+ handler('BTN_FB_BACK',()=>{stop('Left FLM feedback');return ui.open('DIAGNOSTICS')});
  const preview=()=>{
    const pattern=settings.get('pattern'),ms=Number(settings.get('interval')),hold=Number(settings.get('hold'));
    const recipe=({alternate:['L','R'],double:['L','L','R','R'],triple:['L','L','L','R','R','R'],together:['L+R','OFF']})[pattern]||['L','R'];
@@ -79,7 +110,7 @@ mgu.run({async start(ctx){
  };
  handler('BTN_PREVIEW',preview);handler('BTN_PREVIEW_BACK',()=>ui.open('MAIN'));
  settings.onChange(()=>{if(!enabled())stop('Disabled');update()});
- ui.onVisible(()=>{if((capture.active||pending)&&!ui.isVisible('DIAGNOSTICS'))stop('Left diagnostics');update()});
+ ui.onVisible(()=>{if((capture.active||pending)&&!ui.isVisible('DIAGNOSTICS')&&!ui.isVisible('FLM_FEEDBACK'))stop('Left diagnostics');update()});
  if(ctx.app&&ctx.app.on)ctx.app.on('shutdown',()=>{closing=true;stop('Shutdown')});
  process.on('SIGTERM',()=>{closing=true;stop('Shutdown');process.exit(0)});
  guard.init(ctx.signals,log,v=>{lastCombined=v&&v.statusMainBeam_headlightFlasher;capture.status(v)}).catch(e=>log.warn(String(e)));
