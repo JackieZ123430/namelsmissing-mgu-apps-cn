@@ -245,6 +245,24 @@
       }
     },
     {
+      "id": "light_flasher",
+      "kind": "app",
+      "title": "Light Flasher",
+      "version": "0.1.0",
+      "path": "apps/light_flasher",
+      "mguHmi": [
+        "ID7"
+      ],
+      "build": {
+        "python": "tools/build_store_app.py",
+        "args": [
+          "{id}"
+        ],
+        "sdk": "oap-sdk",
+        "output": "dist/{id}@{version}.tgz"
+      }
+    },
+    {
       "id": "equalizer",
       "kind": "app",
       "title": "Equalizer DSP (experimental)",

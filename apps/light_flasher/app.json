@@ -1,0 +1,226 @@
+{
+  "id": "light_flasher",
+  "title": "Light Flasher",
+  "description": "Read-only BDC stalk and headlamp diagnostics with configurable simulated flash patterns. No vehicle light actuation.",
+  "version": "0.1.0",
+  "vendor": "custom",
+  "loggingId": "OLF1",
+  "iconGlyph": "LF",
+  "showRepoCredits": false,
+  "signals": {
+    "com.harman.infotainment.systemfunctions.tasu.tasu.InternalTasu": {
+      "_instances": "SystemFunctionsInternalTasuInst1",
+      "_methods": [
+        "sendTasuRequest"
+      ],
+      "_broadcasts": [
+        "sendTasuResponse"
+      ]
+    },
+    "de.bmw.infotainment.vehicle.Vehicle2": {
+      "statusCarSpeed2": "rs",
+      "statusLightStatus": "rs"
+    },
+    "de.bmw.infrastructure.VehicleInformation": {
+      "statusGearboxDrive": "s",
+      "DataPowerTrain2": "s"
+    }
+  },
+  "settings": [
+    {
+      "key": "enabled",
+      "label": "Enable diagnostic mode (no lamp commands)",
+      "type": "bool",
+      "default": false
+    },
+    {
+      "key": "pattern",
+      "label": "Preview pattern",
+      "type": "choice",
+      "default": "alternate",
+      "options": [
+        [
+          "alternate",
+          "Alternate L/R"
+        ],
+        [
+          "double",
+          "Double L/R"
+        ],
+        [
+          "triple",
+          "Triple L/R"
+        ],
+        [
+          "together",
+          "Both together"
+        ]
+      ]
+    },
+    {
+      "key": "interval",
+      "label": "Preview step interval",
+      "type": "choice",
+      "default": "100",
+      "options": [
+        [
+          "100",
+          "100 ms"
+        ],
+        [
+          "150",
+          "150 ms"
+        ],
+        [
+          "200",
+          "200 ms"
+        ],
+        [
+          "300",
+          "300 ms"
+        ],
+        [
+          "500",
+          "500 ms"
+        ],
+        [
+          "1000",
+          "1000 ms"
+        ]
+      ]
+    },
+    {
+      "key": "hold",
+      "label": "Preview hold threshold",
+      "type": "choice",
+      "default": "3000",
+      "options": [
+        [
+          "2000",
+          "2 s"
+        ],
+        [
+          "3000",
+          "3 s"
+        ],
+        [
+          "4000",
+          "4 s"
+        ],
+        [
+          "5000",
+          "5 s"
+        ]
+      ]
+    }
+  ],
+  "screens": [
+    {
+      "name": "MAIN",
+      "kind": "menu",
+      "title": "Light Flasher",
+      "settings": true,
+      "items": [
+        [
+          "text3",
+          "STATUS",
+          "Diagnostic mode is OFF. Physical actuation unavailable."
+        ],
+        [
+          "button",
+          "BTN_DIAG",
+          "Diagnostics - stalk / high beam"
+        ],
+        [
+          "button",
+          "BTN_PREVIEW",
+          "Pattern preview (simulation only)"
+        ],
+        [
+          "text3",
+          "NOTICE",
+          "Only read-only diagnosis is implemented. No automatic trigger and no vehicle light commands."
+        ]
+      ]
+    },
+    {
+      "name": "DIAGNOSTICS",
+      "kind": "menu",
+      "title": "Light Flasher | diagnostics",
+      "items": [
+        [
+          "text3",
+          "DIAG_STATE",
+          "Not recording"
+        ],
+        [
+          "button",
+          "BTN_START",
+          "Start 60-second read-only test (P)"
+        ],
+        [
+          "button",
+          "BTN_NEUTRAL",
+          "Mark: neutral / released"
+        ],
+        [
+          "button",
+          "BTN_PULL",
+          "Mark: pulling flasher"
+        ],
+        [
+          "button",
+          "BTN_PUSH",
+          "Mark: pushing high beam"
+        ],
+        [
+          "button",
+          "BTN_LATCH",
+          "Mark: continuous high beam, lever released"
+        ],
+        [
+          "button",
+          "BTN_STOP",
+          "Stop recording"
+        ],
+        [
+          "button",
+          "BTN_SAVE",
+          "Stop and save JSON log"
+        ],
+        [
+          "scroll",
+          "DIAG_LOG",
+          "Raw BDC replies and BMW light status"
+        ],
+        [
+          "button",
+          "BTN_BACK",
+          "Back"
+        ]
+      ]
+    },
+    {
+      "name": "PREVIEW",
+      "kind": "menu",
+      "title": "Light Flasher | simulated sequence",
+      "items": [
+        [
+          "text3",
+          "PREVIEW_INFO",
+          "Timing and pattern preview only; no vehicle connection used."
+        ],
+        [
+          "scroll",
+          "PREVIEW_TEXT",
+          ""
+        ],
+        [
+          "button",
+          "BTN_PREVIEW_BACK",
+          "Back"
+        ]
+      ]
+    }
+  ]
+}
