@@ -1,4 +1,12 @@
-# Light Flasher 0.1.2
+# Light Flasher 0.1.3
+
+## 0.1.3 – Verified electrical feedback; OEM priority remains unknown
+
+D6DB decoding uses 15 x 5-byte records: PWM (%), big-endian unsigned current (mA), voltage (V), phase. The latest consistent OFF/ON/OFF vehicle series confirms channel 8 on each side goes 0%/0 mA -> 100%/1000 mA -> 0%/0 mA, while channel 7 remains at 100%. A voltage value of 1 V was observed on one side after switch-off; zero current is not identical to zero voltage. D6DB responses took 269–301 ms (eight reads, mean 290.75 ms). D9FC remained identical. The earlier BDC timeout is separate from the successful FLM reads.
+
+Both original FLM02 PRGs define a timed channel routine and PWM parameter, but do not document arbitration against a normal high-beam request, the effect of zero PWM on that request, or physical restoration after stop/timeout. Existing Light Show deliberately excludes zero PWM. The diagnostic PRG is not ECU firmware. Positive UDS acknowledgment does not demonstrate physical output or restoration. No change to the actuator whitelist or any live suppression control is made. Further authority/restoration validation belongs on an isolated, non-road bench with manufacturer documentation and independent observation. Readback and readiness flags are now included in the log; those flags cannot be changed via settings.
+
+
 
 ## 0.1.2 – Read-only FLM feedback investigation
 

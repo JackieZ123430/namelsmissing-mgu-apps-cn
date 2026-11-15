@@ -2,6 +2,7 @@
 const mgu=require('./kit/mgu'),fs=require('fs'),path=require('path');
 const Guard=require('./guard');
 const {Reader,Capture}=require('./probe');
+const Feedback=require('./feedback');
 mgu.run({async start(ctx){
  const {ui,settings,log}=ctx, capture=new Capture(),reader=new Reader(ctx.signals,log);
  let lastCombined=null, lastRead=0, pending=false, generation=0, exported='', closing=false, connectionState='Not checked', lastError='';
@@ -14,7 +15,12 @@ mgu.run({async start(ctx){
    ui.text('STATUS',(enabled()?'Diagnostic mode ON':'Diagnostic mode OFF')+' | physical flashing unavailable');
    if(ui.isVisible('FLM_FEEDBACK')){
      ui.text('FB_STATUS',feedbackStatus+' | '+(g.blockedBy||'P / stationary')+' | Combined light: '+(lastCombined||'unknown')+'\n'+(lastError||'Read-only, no light commands'));
-     ui.text('FB_LOG',feedback.slice(-3).map(f=>f.label+' | '+f.before+' -> '+f.after+'\n'+f.results.map(z=>z.side+' '+(z.did||z.kind)+' '+(z.error||z.reply)).join('\n')).join('\n\n')+(exported?'\nSaved: '+exported:''));
+     ui.text('FB_LOG',feedback.slice(-3).map(f=>{
+       const d=Feedback.sampleState(f);
+       return f.label+' | '+f.before+' -> '+f.after+' | '+(d.consistent?'consistent':'not confirmed')+'\n'+
+         Object.entries(d.sides).map(([side,x])=>side+' CH8: '+x.highBeam.pwmPercent+'% / '+x.highBeam.currentMa+' mA / '+x.highBeam.voltageV+' V | CH7: '+x.lowBeam.pwmPercent+'%').join('\n')+
+         '\n'+f.results.map(z=>z.side+' '+(z.did||z.kind)+' '+(z.error||z.reply)).join('\n');
+     }).join('\n\n')+(exported?'\nSaved: '+exported:''));
    }
    if(!ui.isVisible('DIAGNOSTICS'))return;
    ui.text('DIAG_STATE',c.reason+' | '+connectionState+
@@ -71,10 +77,10 @@ mgu.run({async start(ctx){
  function saveReport(){
    if(pending)throw Error('Wait for the read to finish before saving');
    stop('Saved');const file=path.join(ctx.dataDir,'light-flasher-diagnostics.json');
-   const report={app:'light_flasher',version:'0.1.2',at:new Date().toISOString(),guard:guard.snapshot(),
+   const report={app:'light_flasher',version:'0.1.3',at:new Date().toISOString(),guard:guard.snapshot(),
      bdcIndex:reader.index,identityReply:reader.identityReply,connectionState,lastError,
      tasuAvailable:reader.diag.available,tasuError:reader.diag.error||null,trace:reader.trace.slice(),
-     physicalActuation:false,combinedSignal:lastCombined,capture:capture.snapshot(),flmFeedback:feedback.slice(),feedbackStatus};
+     physicalActuation:false,combinedSignal:lastCombined,capture:capture.snapshot(),flmFeedback:feedback.slice(),decodedFeedback:feedback.map(Feedback.sampleState),overrideReadiness:Feedback.limits,feedbackStatus};
    fs.writeFileSync(file+'.tmp',JSON.stringify(report,null,2));fs.renameSync(file+'.tmp',file);exported=file;update();
  }
  handler('BTN_SAVE',saveReport);
@@ -95,7 +101,7 @@ mgu.run({async start(ctx){
      sample.complete=allowed()&&sample.results.filter(x=>x.kind==='feedback').length===6;
    }finally{
      sample.after=lastCombined;sample.endedAt=new Date().toISOString();
-     feedbackStatus=sample.complete?'Sample complete; raw feedback not decoded':'Sample incomplete; inspect replies or errors';
+     feedbackStatus=sample.complete?'Sample complete; electrical readback only':'Sample incomplete; inspect replies or errors';
      pending=false;update();
    }
  }
