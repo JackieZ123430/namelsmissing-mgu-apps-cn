@@ -12,55 +12,57 @@ const { SafeDiag } = require('../apps/g21_wheelheat/safe_diag');
 Module._resolveFilename = originalResolve;
 
 async function run() {
-    let permit = false, calls = 0;
-    const ctx = { settings: { get: () => permit }, signals: {}, log: { info() {}, warn() {} } };
-    const ctl = new SafeDiag(ctx, 0x40, 0xD074);
-    ctl.diag.p = {};
-    ctl.diag.available = true;
-    ctl.diag.physical = async () => { calls++; return [0x6E, 0xD0, 0x74]; };
-    const data = [0xD0, 0x74, 0x3C];
-    const fresh = () => { ctl.readAt = Date.now(); };
-    assert.equal(await ctl.autoWrite(data, 'Heating ON'), false, 'off by default');
-    assert.equal(calls, 0);
-    permit = true;
-    fresh();
-    assert.equal(await ctl.autoWrite(data, 'Heating ON'), false, 'unknown speed blocks');
-    assert.equal(calls, 0);
-    ctl.speed = 0;
-    ctl.speedAt = Date.now();
-    fresh();
-    assert.equal(await ctl.autoWrite(data, 'Heating ON'), true, 'positive BDC reply');
-    assert.equal(calls, 1);
-    // The read-back cache must be populated only from an actual 0x62 response,
-    // and must never silently reuse the last requested 0x2E value.
-    ctl.diag.physical = async (_target, service, request) => service === 0x22
-        ? [0x62, request[0], request[1], 0x01, 0x7F]
-        : [0x6E, request[0], request[1]];
-    assert.equal(await ctl.read(0xD074), true);
-    assert.deepEqual(ctl.readbacks[0xD074].payload, [0x01, 0x7F]);
-    assert.equal(ctl.readbacks[0xD074].ok, true);
-    ctl.diag.physical = async () => [0x7F, 0x22, 0x31];
-    assert.equal(await ctl.read(0xE432), false);
-    assert.match(ctl.readbacks[0xE432].error, /NRC/);
-    assert.equal(await ctl.autoWrite(data, 'Heating ON'), false, 'fresh ECU read required');
-    assert.equal(calls, 1);
-    ctl.speed = 10;
-    ctl.speedAt = Date.now();
-    ctl.lastWriteAt = 0;
-    fresh();
-    ctl.diag.physical = async (_ecu, sid, req) => {
-        if (sid === 0x2E) { calls++; return [0x6E, req[0], req[1]]; }
-        return [0x62, req[0], req[1]];
+    let permit = false, writes = 0;
+    const ctl = new SafeDiag({settings:{get:()=>permit},signals:{},log:{info(){},warn(){}}},0x40,0xD074);
+    ctl.diag.p={};ctl.diag.available=true;
+    const wheel=[0xD0,0x74,60],driver=[0xE4,0x32,3,60],passenger=[0xE4,0x30,3,60];
+    const errors=new Map();
+    ctl.diag.physical=async (_target,sid,data)=>{
+        const did=data[0]*256+data[1];
+        if(sid===0x22)return errors.has(did)?[0x7F,0x22,errors.get(did)]:[0x62,data[0],data[1],1,0,0x44,2,1];
+        if(sid===0x2E){writes++;return [0x6E,data[0],data[1]];}
+        throw Error('unexpected service');
     };
-    assert.equal(await ctl.autoWrite(data, 'Heating ON'), true,
-        'vehicle moving with fresh BDC and speed signal may auto-start');
-    assert.equal(calls, 2);
-    ctl.speedAt = Date.now() - 10000;
-    ctl.lastWriteAt = 0;
-    fresh();
-    assert.equal(await ctl.autoWrite(data, 'Heating ON'), false,
-        'stale vehicle-speed signal blocks moving writes');
-    assert.equal(calls, 2);
-    console.log('OK: automatic moving writes require consent, live speed and fresh BDC read');
+    const motion=speed=>{ctl.speed=speed;ctl.speedAt=Date.now();};
+    assert.equal(await ctl.read(0xD074),true);
+    assert.equal(await ctl.autoWrite(wheel,'wheel'),false,'explicit consent required');
+    permit=true;
+    assert.equal(await ctl.autoWrite(wheel,'wheel'),false,'unknown speed blocked');
+    motion(0);
+    assert.equal(await ctl.autoWrite(driver,'driver'),false,'wheel read cannot authorize seat');
+    errors.set(0xE432,0x22);errors.set(0xE430,0x22);
+    assert.equal(await ctl.read(0xE432),false);
+    assert.equal(ctl.readbacks[0xE432].nrc,0x22);
+    assert.equal(ctl.readRetryable,true);
+    assert.equal(await ctl.read(0xE430),false);
+    assert.equal(await ctl.autoWrite(driver,'driver'),false);
+    assert.equal(await ctl.autoWrite(passenger,'passenger'),false);
+    assert.equal(await ctl.autoWrite(wheel,'wheel'),true,'G05 seat rejection does not block wheel');
+    assert.equal(writes,1);
+    assert.equal(ctl.verifiedFor(0xD074),false);
+    errors.delete(0xE432);errors.delete(0xE430);errors.set(0xD074,0x25);
+    ctl.lastWriteAt=0;motion(10);
+    assert.equal(await ctl.read(0xD074),false);
+    assert.equal(ctl.lastReadNrc,0x25);
+    assert.equal(ctl.readRetryable,true);
+    assert.match(ctl.info,/no response from subnet component/);
+    assert.equal(await ctl.read(0xE432),true);
+    assert.equal(await ctl.autoWrite(driver,'driver'),true,'G21 seat independent of unavailable wheel');
+    assert.equal(writes,2);
+    ctl.lastWriteAt=0;
+    assert.equal(await ctl.autoWrite(passenger,'passenger'),false,'target read required');
+    errors.set(0xE430,0x31);
+    assert.equal(await ctl.read(0xE430),false);
+    assert.equal(ctl.readRetryable,false);
+    errors.delete(0xE430);
+    assert.equal(await ctl.read(0xE430),true);
+    ctl.speedAt=Date.now()-10000;
+    assert.equal(await ctl.autoWrite(passenger,'passenger'),false,'stale speed');
+    motion(0);ctl.verifiedAt[0xE430]=Date.now()-61000;
+    assert.equal(await ctl.autoWrite(passenger,'passenger'),false,'stale read');
+    assert.equal(await ctl.read(0xE430),true);
+    assert.equal(await ctl.autoWrite(passenger,'passenger'),true);
+    assert.equal(writes,3);
+    console.log('OK: independent G21/G05 gates, NRC 22/25/31, consent, freshness');
 }
-run().catch(e => { console.error(e); process.exitCode = 1; });
+run().catch(e=>{console.error(e);process.exitCode=1;});

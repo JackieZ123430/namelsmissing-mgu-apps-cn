@@ -36,3 +36,7 @@ test('G05 manual steering wheel OFF/ON transitions display the latest BDC state'
     assert.equal(B.readbackLabel({ on: true, level: 3 }, true), 'ON  |  Level 3');
     assert.equal(B.readbackLabel(null, false), null);
 });
+
+test('G05 seat NRC 22 is not a decoded OFF state',()=>{
+    assert.equal(B.decodeSeatReadback([0x7f,0x22,0x22]),null);
+});
