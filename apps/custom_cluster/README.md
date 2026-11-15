@@ -1,5 +1,15 @@
-# Custom Cluster 0.6.3 — BMW G21 / MGU iDrive 7
+# Custom Cluster 0.6.4 — BMW G21 / MGU iDrive 7
 
+
+## 0.6.4 — 6WB round-dial parked prototype
+
+The tester confirmed two successive 0.6.3 probes work. The three coloured shapes were intentionally independent of the preview design. A new explicit test option now sends 6WB-inspired instrument artwork to the physical panel instead of those marker shapes.
+
+- Select BMW 6WB under Cluster layout, Standard panel, and **6WB round dials (parked prototype)** under Test content. Leave experimental tests off until the car is safely parked, all original indicators have recovered and no relevant faults/warnings remain. Start the test manually. The older saved design option stays a three-marker diagnostic; upgrades do not silently select the larger drawing.
+- Two 256x256 RGBA dial-face textures are drawn using the kit Canvas and sent once each. Two tiny GLSL effects draw the real-value pointers. All four 320x320 layers are initially hidden and initialized before visibility; the speed/RPM scalars come from real samples. Comfort, Sport and ECO accents are supported; the chosen face colour is fixed for the short test. The artwork is original, not a factory 6WB skin.
+- Side regions x=88..408 and x=1512..1832 leave the nominal centre map aperture (x=416..1504) and bottom strip untouched by our drawing. The native slot composition may still hide OEM media, and original dial segments may remain visible outside the round faces. No guarantee of preserved OEM indicators or simultaneous Waze display until verified on the specific vehicle.
+- Existing 12-second test limit, fresh release acknowledgement, parked guard and non-contending renderer requests stay in effect. Release every owned layer on timeout, leaving P, invalid/stale signals, opt-out or owned renderer error. No layer replay after disconnect. One-/three-marker diagnostics remain available. G80 and other full layouts are still previews only.
+- Simulated checks verified the four allocations, initialization order, real RPM update, repeated release/rearm and error/disconnect cleanup. The actual image texture path, fonts, GPU rendering, and vehicle geometry still need hardware validation; the full MGU package build is not verified here.
 
 ## 0.6.3 — release acknowledgement and concise logs
 
