@@ -1,8 +1,8 @@
 {
   "id": "light_flasher",
   "title": "Light Flasher",
-  "description": "Autostart passive parked light monitor, manual parked lamp test and simulated patterns. No OEM suppression or background actuation.",
-  "version": "0.1.6",
+  "description": "Passive startup monitor, bounded manual parked test, actual two-request TASU transport test. No OEM suppression.",
+  "version": "0.1.7",
   "vendor": "custom",
   "loggingId": "OLF1",
   "iconGlyph": "LF",
@@ -77,19 +77,19 @@
       "options": [
         [
           "20",
-          "20 ms (simulation only)"
+          "20 ms (transport test only)"
         ],
         [
           "40",
-          "40 ms (simulation only)"
+          "40 ms (transport test only)"
         ],
         [
           "60",
-          "60 ms (simulation only)"
+          "60 ms (transport test only)"
         ],
         [
           "80",
-          "80 ms (simulation only)"
+          "80 ms (transport test only)"
         ],
         [
           "100",
@@ -186,13 +186,13 @@
         ],
         [
           "button",
-          "BTN_PREVIEW",
-          "Pattern preview (simulation only)"
+          "BTN_TRANSPORT",
+          "TASU transport test (real read-only)"
         ],
         [
           "text3",
           "NOTICE",
-          "Background monitor is read-only. Manual lamp test only in P on private property; 20-80 ms simulation only. No OEM suppression or automatic activation."
+          "Private property / P for manual lamp test. Sub-100 ms settings are for the real read-only transport test; no automatic actuation or OEM suppression."
         ]
       ]
     },
@@ -264,28 +264,6 @@
       ]
     },
     {
-      "name": "PREVIEW",
-      "kind": "menu",
-      "title": "Light Flasher | simulated sequence",
-      "items": [
-        [
-          "text3",
-          "PREVIEW_INFO",
-          "Timing and pattern preview only; no vehicle connection used."
-        ],
-        [
-          "scroll",
-          "PREVIEW_TEXT",
-          ""
-        ],
-        [
-          "button",
-          "BTN_PREVIEW_BACK",
-          "Back"
-        ]
-      ]
-    },
-    {
       "name": "FLM_FEEDBACK",
       "kind": "menu",
       "title": "Light Flasher | FLM feedback",
@@ -329,6 +307,43 @@
           "button",
           "BTN_FB_BACK",
           "Back to diagnostics"
+        ]
+      ]
+    },
+    {
+      "name": "TRANSPORT",
+      "kind": "menu",
+      "title": "Light Flasher | TASU transport",
+      "items": [
+        [
+          "text3",
+          "TP_HELP",
+          "Set requested interval in Settings. Two real FLM identity requests, no lamp commands. Second request dispatched without awaiting first reply. No retries."
+        ],
+        [
+          "text3",
+          "TP_STATUS",
+          "Not tested"
+        ],
+        [
+          "button",
+          "BTN_TP_START",
+          "Run two-request test"
+        ],
+        [
+          "button",
+          "BTN_TP_SAVE",
+          "Save diagnostic JSON"
+        ],
+        [
+          "scroll",
+          "TP_LOG",
+          "Send and response timestamps"
+        ],
+        [
+          "button",
+          "BTN_TP_BACK",
+          "Back"
         ]
       ]
     }

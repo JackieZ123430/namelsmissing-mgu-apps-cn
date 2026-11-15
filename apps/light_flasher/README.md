@@ -1,4 +1,10 @@
-# Light Flasher 0.1.6
+# Light Flasher 0.1.7
+
+## 0.1.7 – Real transport experiment, no preview menu
+
+Select the requested interval and open TASU transport test. In P with diagnostics enabled, the test issues exactly two read-only identity requests to the two FLMs, dispatching the second without waiting for the first method verdict or ECU response. No retries, no actuator requests, no session change. A finite drain waits for replies and records actual dispatch gap, separate transport verdict times and ECU response times, busy/error events and matched identities. Tests may be affected by other diagnostic apps sharing TASU; stop their diagnostic operations first. Save diagnostic JSON. Two accepted requests do not establish safe repeated actuator sequencing or precise optical timing. Physical lamp control still uses the existing guarded acknowledged path; sub-100 ms settings are real transport tests, not lamp timing. The text preview is removed. Autostart remains passive.
+
+
 
 ## 0.1.6 – Autostart passive monitor and simulation timings
 
