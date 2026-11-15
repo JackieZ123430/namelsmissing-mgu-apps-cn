@@ -1,5 +1,14 @@
-# Custom Cluster 0.6.4 — BMW G21 / MGU iDrive 7
+# Custom Cluster 0.6.5 — BMW G21 / MGU iDrive 7
 
+
+## 0.6.5 — one test mode for the selected layout
+
+- **Test content → Selected layout (parked prototype)** uses the chosen layout, not a fixed set of diagnostic blocks. G21 OEM-style recreation, G80-inspired, M Sport, Classic and Minimal use the shared side-artwork engine; 6WB uses its existing two faces/two needle effects. BMW original is unchanged. Existing diagnostic and preview settings remain valid; a saved marker choice is not silently converted on upgrade. Experimental tests remain opt-in and limited to 12 s in verified P with fresh measured values.
+- The shared engine uses four or six hidden-initialized layers, bounded to the left/right nominal side areas, with two 256×256 faces, two small 128×56 numeric readouts and (except Minimal) separate moving markers. Only changed values are sent to small dynamic textures and marker positions. The G21 art recreates the angular contour and visible labels from the tester's photo, with a piecewise approximate scale; it is **not the actual BMW artwork**, a pixel-exact clone, or a native RGB palette change. G80 is also an independent approximation, not a factory M skin.
+- The five shared layouts now show their own corresponding side artwork on the iDrive preview. Palette/custom RGB and brightness apply to the artwork; automatic colour cycling is sampled at test start for the short KOMBI test to keep face and markers consistent. 6WB continues to offer Comfort/Sport/ECO palettes.
+- The previous automatic Sport/Classic/Minimal map overlays have been retired so selecting a design alone never adds those gauges to the map. Existing independent Waze control remains unchanged. No layer covers the nominal centre rectangle or bottom strip, but actual OEM warning indicators, music, and map composition are not yet verified on the car. Original instruments may remain visible around the small side graphics. Stop testing if stock displays or faults do not return to normal.
+- Review of the cluster-render protocol and other community apps did not establish a method to recolour the existing BMW KOMBI scene in place. No firmware/coding writes or upstream-source copying are included. Exact 1:1 OEM recolouring remains unresolved.
+- Targeted simulations exercised every layout, repeatability, measured-value updates, renderer refusal recovery, opt-out and side-region bounds. Rendering with the actual KOMBI GPU, transfer of textures, exact fit, OEM recovery and a complete MGU build have not been validated.
 
 ## 0.6.4 — 6WB round-dial parked prototype
 
