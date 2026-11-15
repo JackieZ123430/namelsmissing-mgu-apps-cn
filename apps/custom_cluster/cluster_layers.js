@@ -95,6 +95,7 @@ class ClusterLayers {
         this.recoveryTarget = null;
         this.releaseConfirmed = false;
         this.lastRecoveryReport = '';
+        this.lastTestStatusReport = '';
         this.options = { layout: 'stock', accent: 'm', phoneBadge: false, wazeMap: 'auto',
             sixwbTheme: 'comfort', sixwbColorSource: 'original',
             colorMode: 'palette', colorBrightness: 100,
@@ -166,7 +167,13 @@ class ClusterLayers {
                 // made after 12 seconds otherwise sees only the idle slot.
                 const lines = this.rendererStatusText.split('\n')
                     .filter((line) => /^(target (panel|map)|slot 0x(100|200|203)|renderer:)/i.test(line)).slice(0, 6);
-                if (lines.length) this.tracePanel('during test: ' + lines.join(' | '));
+                const summary = lines.join(' | ');
+                if (summary && summary !== this.lastTestStatusReport) {
+                    this.lastTestStatusReport = summary;
+                    // Separate changes into readable single lines, not a
+                    // repeating six-line paragraph every 1.5 seconds.
+                    lines.forEach(line => this.tracePanel('during test: ' + line));
+                }
             }
         });
         this.cr.on('refused', (op, ref, reason) => {
@@ -320,6 +327,8 @@ class ClusterLayers {
         this.recoveryTarget = null;
         this.releaseConfirmed = false;
         this.lastRecoveryReport = '';
+        this.lastTestStatusReport = '';
+        this.recoveryState = 'not requested';
         this.suspended = false;
         this.activePanelTarget = target;
         // Saved 'design' settings are migrated to the bounded layer probe.
@@ -381,7 +390,7 @@ class ClusterLayers {
                     }
                 });
                 this.panelRefs.forEach(ref => this.cr.set(ref, { visible: true }));
-                this.tracePanel('small non-contending layers initialized and shown: ' +
+                this.tracePanel('small non-contending layers initialized; visibility requested: ' +
                     this.panelRefs.join(',') + '; OEM media unverified');
             } catch (e) {
                 this.tracePanel('piece creation failed: ' + String(e.message || e));
