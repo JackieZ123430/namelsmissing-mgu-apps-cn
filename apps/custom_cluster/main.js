@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Custom Cluster 0.6.4 - selectable 6WB dial artwork and guarded live needles.
+ * Custom Cluster 0.6.5 - selected artwork for all six parked layouts.
  * Stock is the default. Real values only can reach cluster-render; emulator
  * and demo values stay exclusively on the centre-screen preview.
  */
@@ -20,7 +20,7 @@ const { LiveLog } = require('./live_log.js');
 function fmt(v, unit) { return G.isNum(v) ? String(Math.round(v)) + (unit || '') : '--'; }
 function ageText(age) { return age == null ? 'no sample' : age + 's old'; }
 function testName(mode) {
-    return ({ preview: 'HMI only', probe: 'One marker', design: '3 diagnostic markers', pieces: '3 diagnostic markers', sixwb_dials: '6WB dials' })[mode] || mode;
+    return ({ preview: 'HMI only', probe: 'One marker', design: '3 diagnostic markers', pieces: '3 diagnostic markers', sixwb_dials: '6WB dials', selected_layout: 'Selected layout' })[mode] || mode;
 }
 function testSummary(st) {
     return 'selector=' + (st.gearPosition || '?') +
@@ -118,7 +118,8 @@ mgu.run({
                 currentPage === 'MAIN' ?
                     (!settings.get('enablePanelTests') || settings.get('panelTestMode') === 'preview' ?
                         'Static HMI preview' : settings.get('panelTestMode') === 'sixwb_dials' ?
-                            '6WB dial test' : 'Parked panel test') :
+                            '6WB dial test' : settings.get('panelTestMode') === 'selected_layout' ?
+                                'Test selected layout' : 'Parked panel test') :
                     'Back to cluster');
             ui.text('BTN_DIAG', currentPage === 'QR_REPORT' ?
                 (clearArmedUntil > Date.now() ? 'Confirm delete' : 'Delete logs') :
@@ -438,22 +439,9 @@ mgu.run({
             if (layout === 'sixwb') {
                 draw6WBPreview(cv, { x: 38, y: 86, w: 1042, h: 398 }, d,
                     { wazeMap: settings.get('wazeMap'), color: accentHex, mode: settings.get('sixwbTheme') }, st);
-            } else if (layout === 'g80' || layout === 'oem') {
-                drawG80Preview(cv, { x: 38, y: 86, w: 1042, h: 398 }, d,
-                    { wazeMap: settings.get('wazeMap'), color: accentHex, variant: layout }, st);
-            } else if (layout === 'classic') {
-                G.radial(cv, t, 300, 302, 156, { value: d.speed, min: 0, max: 260, label: 'SPEED', unit: 'km/h', ticks: 13, color: accentHex });
-                G.radial(cv, t, 824, 302, 156, { value: d.rpm, min: 0, max: 5000, label: 'RPM', ticks: 10, color: accentHex });
-            } else if (layout === 'sport') {
-                G.segBar(cv, t, 75, 135, 964, 120, { label: 'Engine speed', value: d.rpm, min: 0, max: 5000,
-                    unit: 'rpm', step: 250, limit: 4800, color: accentHex });
-                cv.text(fmt(d.speed), 115, 407, 82, t.text, { font: 'num' });
-                cv.text('km/h', 420, 407, 30, t.dim);
-                cv.text('OIL ' + fmt(d.oil, ' C'), 800, 394, 27, t.dim);
-            } else if (layout === 'minimal') {
-                cv.text(fmt(d.speed), 170, 310, 128, t.text, { font: 'num' });
-                cv.text('km/h', 520, 308, 36, t.dim);
-                cv.text('RPM  ' + fmt(d.rpm), 175, 415, 36, accentHex);
+            } else if (['g80','oem','classic','sport','minimal'].indexOf(layout) >= 0) {
+                require('./layout_panels.js').drawLayoutPreview(cv,
+                    { x:38, y:86, w:1042, h:398 },d,{layout},accentHex);
             } else {
                 cv.text('BMW ORIGINAL CLUSTER', 80, 255, 46, t.text, { font: 'bold' });
                 cv.text('Waze map remains unchanged', 85, 330, 28, t.dim);
@@ -483,7 +471,7 @@ mgu.run({
             } else cv.text('Shortcuts URLs in Settings', 1150, 434, 17, t.dim);
             if (qrError) cv.text('QR: ' + qrError.slice(0, 48), 1140, 463, 13, t.warn);
 
-            if (layout === 'g80' || layout === 'oem' || layout === 'sixwb') {
+            if (layout !== 'stock') {
                 cv.text(previewActive ? 'Static preview: no KOMBI graphics are changed' :
                     'KOMBI takeover only in verified P; OEM music may be hidden',
                     1136, 474, 16, t.warn);
