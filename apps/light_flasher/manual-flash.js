@@ -1,23 +1,27 @@
 'use strict';
-// Manual parked one-shot only. Never override an active OEM beam, never start on bookmark/app launch.
-// Fixed, previously used FLM02 channel 8, 60% PWM, ECU timer 1 second.
-// Transport is serialized, so left/right are sequential, not synchronized.
+// Only a bounded explicit parked test, never automatic, no OEM suppression.
 const {replyTo}=require('./tasu');
+const {config}=require('./flash-config');
+const Feedback=require('./feedback');
 const units=Object.freeze([{address:0x43,index:'0F26C0',side:'left'},{address:0x44,index:'0F26D0',side:'right'}]);
 const hex=b=>Array.from(b||[]).map(x=>x.toString(16).padStart(2,'0').toUpperCase()).join('');
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 class ManualFlash {
- constructor(diag,log,sleep=wait){this.diag=diag;this.log=log;this.sleep=sleep;this.running=false;this.cancelled=false;this.trace=[];this.status='Idle';this.cleanupUnconfirmed=false;}
+ constructor(diag,log,sleep=wait,now=Date.now,journal=null){this.diag=diag;this.log=log;this.sleep=sleep;this.now=now;this.journal=journal;this.running=false;this.cancelled=false;this.trace=[];this.status='Idle';this.cleanupUnconfirmed=!!(journal&&journal.exists());this.config=null;this.stepsCompleted=0;this.elapsedMs=0;}
  cancel(){this.cancelled=true;}
- async run(allowed,changed=()=>{}){
+ async run(requested,allowed,changed=()=>{}){
   if(this.running)throw Error('Flash already running');
-  if(this.cleanupUnconfirmed)throw Error('Previous cleanup unconfirmed: inspect normal lights and restart app');
+  if(this.cleanupUnconfirmed||(this.journal&&this.journal.exists()))throw Error('Previous cleanup unconfirmed: verify normal lights; locked pending service inspection');
   if(!allowed()||!this.diag.available)throw Error('Enable parked flash, select P and switch OEM high beam OFF');
-  this.running=true;this.cancelled=false;this.trace=[];this.status='Checking FLM identities';changed();
+  const cfg=config(requested.pattern,requested.intervalMs,requested.durationMs);
+  this.config=cfg;this.stepsCompleted=0;this.elapsedMs=0;
+  this.running=true;this.cancelled=false;this.trace=[];this.status='Checking FLM identities and high beam OFF';changed();
+  let began=null,deadline=Infinity,marked=false,error=null;
+  const touched=[],affected=new Set();
   const check=()=>{if(this.cancelled||!allowed()||!this.diag.available)throw Error('Cancelled or park/OEM-light guard changed')};
   const send=async(m,sid,data,cleanup=false)=>{
    if(!cleanup)check();
-   const rec={at:new Date().toISOString(),side:m.side,tx:hex([sid,...data])};this.trace.push(rec);
+   const rec={at:new Date().toISOString(),side:m.side,tx:hex([sid,...data]),elapsedMs:began===null?null:this.now()-began};this.trace.push(rec);
    try{
     if(!this.diag.available)throw Error('TASU unavailable');
     const u=await this.diag.physical(m.address,sid,data,800,replyTo(sid,data),{maxRetries:0,callTimeoutMs:1000,hardTimeoutMs:1800,pendingTimeoutMs:1000});
@@ -26,26 +30,50 @@ class ManualFlash {
     return u;
    }catch(e){rec.error=String(e.message||e);throw e}
   };
+  const delay=async(ms,limit=Infinity)=>{const until=Math.min(this.now()+ms,limit);while(this.now()<until){check();await this.sleep(Math.min(50,until-this.now()))}};
+  const cleanup=async(m,sid,data)=>{try{await send(m,sid,data,true);return true}catch(e){this.cleanupUnconfirmed=true;this.log.warn(String(e));return false}};
   try{
-   for(const m of units){const u=await send(m,0x22,[0xF1,0x50]);if(hex(u.slice(3))!==m.index)throw Error('Unsupported '+m.side+' FLM identity');}
    for(const m of units){
-    let sessionAttempted=false,startAttempted=false;
-    try{
-     check();sessionAttempted=true;await send(m,0x10,[0x03]);
-     check();this.status='One-shot '+m.side;changed();startAttempted=true;
-     await send(m,0x31,[0x01,0xA5,0x4B,8,60,1]);
-     // Do not rely on MGU timing for hard timeout; ECU routine is limited to 1 s.
-     for(let i=0;i<3;i++){await this.sleep(100);check();}
-    }finally{
-     if(startAttempted){try{await send(m,0x31,[0x02,0xA5,0x4B],true)}catch(e){this.cleanupUnconfirmed=true;this.log.warn(String(e));}}
-     if(sessionAttempted){try{await send(m,0x10,[0x01],true)}catch(e){this.cleanupUnconfirmed=true;this.log.warn(String(e));}}
-    }
-    if(this.cleanupUnconfirmed)throw Error('Cleanup not confirmed; no further flash allowed');
-    check();await this.sleep(300);
+    const u=await send(m,0x22,[0xF1,0x50]);if(hex(u.slice(3))!==m.index)throw Error('Unsupported '+m.side+' FLM identity');
+    const raw=await send(m,0x22,[0xD6,0xDB]);const channels=Feedback.decode(Array.from(raw).map(x=>x.toString(16).padStart(2,'0')).join(' '));
+    if(!channels||channels[7].pwmPercent!==0||channels[7].currentMa!==0)throw Error(m.side+' high beam OFF not confirmed');
    }
-   this.status='One-shot complete; cleanup replies OK (verify lamps visually)';
-  }catch(e){this.status='Stopped: '+String(e.message||e);throw e;}
-  finally{this.running=false;changed();}
+   check();if(this.journal){this.journal.mark();marked=true;}
+   for(const m of units){check();touched.push(m);await send(m,0x10,[0x03]);}
+   began=this.now();deadline=began+cfg.durationMs;
+   for(let i=0;i<50&&this.now()<deadline;i++){
+    check();const step=cfg.steps[i%cfg.steps.length];const started=[];const stepAt=this.now();
+    this.status='Pattern '+cfg.label+' | step '+(i+1)+' | '+step.join(' + ');changed();
+    try{
+     for(const side of step){
+      check();if(this.now()>=deadline)break;
+      const m=units.find(x=>x.side===side);started.push(m);affected.add(m);
+      await send(m,0x31,[0x01,0xA5,0x4B,8,60,1]);
+     }
+     // ECU timeout is one second regardless of host scheduling. Settings are
+     // requested step time, not a guarantee of physical pulse width.
+     if(started.length)await delay(Math.max(0,cfg.intervalMs-(this.now()-stepAt)),deadline);
+    }finally{
+     for(const m of started){if(await cleanup(m,0x31,[0x02,0xA5,0x4B]))affected.delete(m);}
+    }
+    if(this.cleanupUnconfirmed)throw Error('STOP not confirmed; no further pulses');
+    if(started.length===step.length)this.stepsCompleted++;
+    // A real dark gap between repeated same-side pulses; no new pulse before STOP.
+    if(this.now()<deadline)await delay(150,deadline);
+   }
+  }catch(e){error=e}
+  finally{
+   for(const m of affected)await cleanup(m,0x31,[0x02,0xA5,0x4B]);
+   for(const m of touched)await cleanup(m,0x10,[0x01]);
+   if(marked&&!this.cleanupUnconfirmed){try{this.journal.clear()}catch(e){this.cleanupUnconfirmed=true;error=error||e}}
+   this.elapsedMs=began===null?0:this.now()-began;
+   this.running=false;
+   this.status=this.cleanupUnconfirmed?'LOCKED: cleanup not confirmed; check normal lamps':
+    error?'Stopped: '+String(error.message||error):'Pattern finished; '+this.stepsCompleted+' steps; verify normal lamps';
+   changed();
+  }
+  if(error)throw error;
+  if(this.cleanupUnconfirmed)throw Error('Cleanup not confirmed; no further flash allowed');
  }
 }
 module.exports=ManualFlash;

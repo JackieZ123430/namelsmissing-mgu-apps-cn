@@ -1,8 +1,8 @@
 {
   "id": "light_flasher",
   "title": "Light Flasher",
-  "description": "Parked manual one-shot FLM test, read-only BDC and FLM diagnostics, and simulated patterns. No OEM suppression.",
-  "version": "0.1.4",
+  "description": "Configurable bounded manual parked FLM flash test, read-only BDC / FLM diagnostics. No OEM suppression.",
+  "version": "0.1.5",
   "vendor": "custom",
   "loggingId": "OLF1",
   "iconGlyph": "LF",
@@ -41,7 +41,7 @@
     },
     {
       "key": "pattern",
-      "label": "Preview pattern",
+      "label": "Flash pattern",
       "type": "choice",
       "default": "alternate",
       "options": [
@@ -65,7 +65,7 @@
     },
     {
       "key": "interval",
-      "label": "Preview step interval",
+      "label": "Requested step interval",
       "type": "choice",
       "default": "100",
       "options": [
@@ -97,7 +97,7 @@
     },
     {
       "key": "hold",
-      "label": "Preview hold threshold",
+      "label": "Flash duration",
       "type": "choice",
       "default": "3000",
       "options": [
@@ -135,7 +135,12 @@
         [
           "button",
           "BTN_FLASH",
-          "Flash once (P, OEM high beam OFF)"
+          "Start flash pattern (P, high beam OFF)"
+        ],
+        [
+          "text3",
+          "FLASH_CONFIG",
+          "Saved pattern / interval / duration"
         ],
         [
           "button",
@@ -160,7 +165,7 @@
         [
           "text3",
           "NOTICE",
-          "Manual one-shot only, stationary in P on private property, no OEM suppression. Bookmarks open app; never trigger automatically."
+          "Private property only, stationary in P. Bounded manual pattern; no OEM suppression or auto-trigger. Clear area in front."
         ]
       ]
     },

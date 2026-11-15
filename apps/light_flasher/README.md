@@ -1,4 +1,10 @@
-# Light Flasher 0.1.4
+# Light Flasher 0.1.5
+
+## 0.1.5 – Manual pattern uses saved settings
+
+Start flash pattern uses the same persisted pattern, interval and hold keys as the preview; the existing hold value is now the manual flash duration (2–5 seconds). Preview pattern -> Flash pattern; Preview step interval -> Requested step interval; Preview hold threshold -> Flash duration. Both use a common configuration validator. Alternate, double, triple and both are supported; each pulse is bounded by the existing one-second ECU timer. Starts are serialized, STOP precedes the next step and at least a requested 150 ms dark gap is inserted. The interval is a requested minimum step time, not guaranteed physical flash timing. Both sides are not exactly simultaneous. New starts cease at the duration deadline, cleanup may run longer. A preflight reads both channel-8 PWM/current values and requires both OFF. A persistent marker prevents further manual tests after unconfirmed cleanup or interrupted execution. No activation on launch/bookmark, no movement, no suppression of OEM lights, no zero PWM. Use only in P on private property away from other people. No change to Light Show.
+
+
 
 ## Manual flash (parked one-shot)
 
