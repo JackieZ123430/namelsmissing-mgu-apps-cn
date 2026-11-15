@@ -2,7 +2,6 @@
 // One client in the existing shared cluster-render service. No binary patch,
 // no second RAMSES participant and no reconfiguration of Waze on cluster.
 const { ClusterRender } = require('./cluster_render_client.js');
-const fragmentShader = require('./cluster_shader.js');
 const probeShader = require('./panel_probe_shader.js');
 const { PALETTE, resolveColor, resolve6WBColor, colorHex } = require('./cluster_colors.js');
 const COLORS = Object.keys(PALETTE).reduce((m, k) => { m[k] = PALETTE[k].concat([1]); return m; }, {});
@@ -69,6 +68,8 @@ class ClusterLayers {
         this.panelRef = 0;
         this.panelRefs = [];
         this.dialNeedles = [];
+        this.layoutParts = [];
+        this.layoutAccent = null;
         this.badgeRef = 0;
         this.ready = false;
         this.layerState = 'inactive';
@@ -124,6 +125,7 @@ class ClusterLayers {
                 this.suspended = true;
                 const owned = this.panelRefs.slice();
                 this.panelRefs = []; this.panelRef = 0; this.dialNeedles = [];
+                this.layoutParts = []; this.layoutAccent = null;
                 this.activeTestMode = '';
                 owned.forEach(ref => this.cr.drop(ref));
                 this.recoveryRequestedAt = Date.now();
@@ -233,6 +235,7 @@ class ClusterLayers {
         this.panelRefs = [];
         this.panelRef = 0;
         this.dialNeedles = [];
+        this.layoutParts = []; this.layoutAccent = null;
         owned.forEach(ref => this.cr.drop(ref));
         if (this.effectRef) { this.cr.drop(this.effectRef); this.effectRef = 0; }
         if (this.badgeRef) { this.cr.drop(this.badgeRef); this.badgeRef = 0; }
@@ -267,7 +270,7 @@ class ClusterLayers {
         if (previous.layout !== options.layout || previous.panelTarget !== options.panelTarget ||
             previous.panelTestMode !== options.panelTestMode ||
             options.enablePanelTests === false ||
-            (this.activeTestMode === 'sixwb_dials' &&
+            (['sixwb_dials','selected_layout'].indexOf(this.activeTestMode) >= 0 &&
                 (previous.sixwbTheme !== options.sixwbTheme ||
                  previous.sixwbColorSource !== options.sixwbColorSource ||
                  previous.colorMode !== options.colorMode ||
@@ -275,7 +278,8 @@ class ClusterLayers {
                  previous.rgbRed !== options.rgbRed ||
                  previous.rgbGreen !== options.rgbGreen ||
                  previous.rgbBlue !== options.rgbBlue ||
-                 previous.colorBrightness !== options.colorBrightness)))
+                 previous.colorBrightness !== options.colorBrightness ||
+                 previous.cycleSeconds !== options.cycleSeconds)))
             this.disarm('Panel settings changed');
         this.apply();
     }
@@ -359,13 +363,18 @@ class ClusterLayers {
     }
     armPanel() {
         if (this.armedUntil) { this.tracePanel('test ended: Stopped by user'); this.restoreOriginal(); return false; }
-        if (this.options.layout !== 'g80' && this.options.layout !== 'oem' && this.options.layout !== 'sixwb') {
-            this.disarmReason = 'Choose a full-panel design first';
+        if (!(MODES[this.options.layout] > 0)) {
+            this.disarmReason = 'Choose a custom instrument design first';
             this.tracePanel('test refused: ' + this.disarmReason);
             return false;
         }
         if (this.options.enablePanelTests === false || this.options.panelTestMode === 'preview') {
             this.disarmReason = 'Experimental KOMBI test not enabled';
+            return false;
+        }
+        if (this.options.panelTestMode === 'selected_layout' && this.panelTarget() !== 'panel') {
+            this.disarmReason = 'Selected layout needs standard panel';
+            this.tracePanel('test refused: ' + this.disarmReason);
             return false;
         }
         if (this.options.panelTestMode === 'sixwb_dials' &&
@@ -400,7 +409,9 @@ class ClusterLayers {
         this.suspended = false;
         this.activePanelTarget = target;
         // Saved 'design' settings are migrated to the bounded layer probe.
-        this.activeTestMode = this.options.panelTestMode === 'sixwb_dials' ? 'sixwb_dials' :
+        this.activeTestMode = this.options.panelTestMode === 'sixwb_dials' ||
+            (this.options.panelTestMode === 'selected_layout' && this.options.layout === 'sixwb') ? 'sixwb_dials' :
+            this.options.panelTestMode === 'selected_layout' ? 'selected_layout' :
             ['pieces','design'].indexOf(this.options.panelTestMode) >= 0 ? 'pieces' : 'probe';
         this.panelTargetState = 'requesting';
         this.panelTargetReason = '';
@@ -427,12 +438,43 @@ class ClusterLayers {
     apply() {
         if (this.suspended) return; // never recreate a layer during OEM recovery
         const mode = MODES[this.options.layout] || 0;
-        const valid = this.live();
         if (this.armedUntil && (!this.parked() || Date.now() >= this.armedUntil)) {
             this.disarm(this.parked() ? 'Test timeout — release requested' : this.testGuard());
             return;
         }
-        const panelActive = (mode === 4 || mode === 5 || mode === 6) && this.armedUntil > Date.now() && this.parked();
+        const panelActive = mode > 0 && this.armedUntil > Date.now() && this.parked();
+        if (panelActive && !this.panelRef && this.activeTestMode === 'selected_layout') {
+            try {
+                const { buildLayout } = require('./layout_panels.js');
+                // Keep static artwork and live indicators the same colour
+                // throughout this short stationary test.
+                this.layoutAccent = resolveColor(this.options, Date.now());
+                this.layoutParts = buildLayout(this.cr, this.activePanelTarget, this.data,
+                    this.options, this.layoutAccent, colorHex(this.layoutAccent), ref => {
+                        this.panelRefs.push(ref);
+                        if (!this.panelRef) this.panelRef = ref;
+                    });
+                this.panelRefs.forEach(ref => this.cr.set(ref, {visible:true}));
+                this.lastSent = Date.now();
+                this.tracePanel('selected artwork ' + this.options.layout +
+                    ': ' + this.panelRefs.length + ' side layers; visibility requested; map not drawn over');
+            } catch(e) {
+                this.tracePanel('selected layout creation failed: ' + String(e.message || e));
+                this.restoreOriginal();
+                return;
+            }
+        }
+        if (panelActive && this.panelRef && this.activeTestMode === 'selected_layout' &&
+            Date.now() - this.lastSent >= 250) {
+            try {
+                require('./layout_panels.js').updateLayout(this.cr,this.layoutParts,this.data,
+                    this.layoutAccent,colorHex(this.layoutAccent));
+                this.lastSent = Date.now();
+            } catch(e) {
+                this.disarm('Selected layout update failed: ' + String(e.message || e));
+                return;
+            }
+        }
         if (panelActive && !this.panelRef && this.activeTestMode === 'sixwb_dials') {
             try {
                 const { buildDials } = require('./sixwb_dials.js');
@@ -497,23 +539,10 @@ class ClusterLayers {
             }
         }
         if (!panelActive && this.panelRef) { this.disarm('Panel release requested'); return; }
-        const show = mode > 0 && mode < 4 && valid;
-        if (show && !this.effectRef) {
-            this.effectRef = this.cr.effect({ target: 'map', klass: 'overlay',
-                // NEVER evict the BMW stock map merely to show coloured dials.
-                // Waze may hold the map slot; otherwise the OEM map wins.
-                contend: false, guide_hold: false, x: 0, y: 0, w: 1088, h: 480,
-                fs: fragmentShader });
-        }
-        if (!show && this.effectRef) { this.cr.drop(this.effectRef); this.effectRef = 0; }
-        if (show && this.effectRef && Date.now() - this.lastSent >= 150) {
-            const d = this.data;
-            this.cr.uniform(this.effectRef, 'u_values', [d.speed, d.rpm, finite(d.oil) ? d.oil : -1,
-                finite(d.coolant) ? d.coolant : -1]);
-            this.cr.uniform(this.effectRef, 'u_style', [mode, 1, 0, 0]);
-            this.cr.uniform(this.effectRef, 'u_accent', resolveColor(this.options, Date.now()));
-            this.lastSent = Date.now();
-        }
+        // All six layouts now use explicit parked panel tests. Do not
+        // automatically inject sport/classic/minimal artwork into the map
+        // target when selected in settings. Keep independent Waze control.
+        if(this.effectRef) { this.cr.drop(this.effectRef); this.effectRef=0; }
         const wantBadge = this.options.phoneBadge && this.phoneOpen && !panelActive;
         if (wantBadge && !this.badgeRef) {
             // No contend: a stock layout does NOT seize the centre-slot from BMW.
