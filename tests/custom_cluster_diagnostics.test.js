@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const zlib = require('zlib');
-const { ClusterLayers } = require('../apps/custom_cluster/cluster_layers');
+const { ClusterLayers, panelReleaseStatus } = require('../apps/custom_cluster/cluster_layers');
 const QR = require('../apps/custom_cluster/cluster_diagnostics');
 
 class FakeRenderer extends EventEmitter {
@@ -72,7 +72,22 @@ assert.strictEqual(cluster.armPanel(), false, 'press again stops');
 assert.deepStrictEqual(fake.drops, [1]);
 assert.strictEqual(cluster.status().suspended, true, 'release stops recreation');
 assert.ok(cluster.status().recoveryState.includes('unverified'), 'never claim stock media restored');
-fake.emit('status', 'target panel slot 0x203 scene 0x01000400 1920x720: idle; scene published');
+// Exact status spelling from real G21 recording (2026-11-15).
+const idle = 'target panel: slot 0x203 scene 0x10004f8 1920x720: idle; scene published';
+const unmapped = 'slot 0x203 status 1: 0x10004f8 class 0 map 0';
+const stillMapped = 'slot 0x203 status 2: 0x10004f8 class 0 map 1';
+assert.strictEqual(panelReleaseStatus(idle+'\n'+unmapped,'panel').idle,true);
+assert.strictEqual(panelReleaseStatus(idle+'\n'+stillMapped,'panel').idle,false);
+assert.strictEqual(panelReleaseStatus(idle,'panel201'),null);
+assert.strictEqual(panelReleaseStatus(idle.replace('panel:', 'panel'),'panel').idle,true);
+fake.emit('target', 'panel', 'lingering', 'us', '');
+assert.strictEqual(cluster.armPanel(), false, 'no new panel while release lingers');
+fake.emit('target', 'panel', 'idle', 'none', '');
+assert.strictEqual(cluster.status().releaseConfirmed,false,'event alone is not fresh status');
+fake.emit('status', idle+'\n'+stillMapped);
+assert.strictEqual(cluster.armPanel(),false,'slot row still mapped blocks retry');
+fake.emit('status', idle+'\n'+unmapped);
+assert.strictEqual(cluster.status().releaseConfirmed,true);
 assert.ok(cluster.status().recoveryState.includes('BMW media NOT verified'));
 assert.ok(cluster.history().includes('test ended: Stopped by user'));
 
@@ -127,7 +142,7 @@ assert.strictEqual(staleCluster.armPanel(), false, 'stale telemetry never enable
 staleCluster.close();
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cluster-qr-test-'));
-const ctx = { dataDir: tempDir, spec: { version: '0.6.2' } };
+const ctx = { dataDir: tempDir, spec: { version: '0.6.3' } };
 const journal = QR.startJournal(ctx);
 assert.ok(journal.path && fs.existsSync(journal.path), 'open app creates a text log without QR');
 assert.ok(/cluster-session-.*\.txt$/.test(journal.path));
