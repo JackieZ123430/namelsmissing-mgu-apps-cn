@@ -35,6 +35,31 @@ const finite = (x) => typeof x === 'number' && Number.isFinite(x);
 const PANEL_TEST_MS = 12000;
 const SIGNAL_MAX_AGE_MS = 15000;
 const PANEL_TARGETS = { panel: true, panel201: true, panel202: true };
+const PANEL_SLOTS = { panel: '203', panel201: '201', panel202: '202' };
+
+// Both the current renderer ("target panel: slot ...") and older test
+// fixtures ("target panel slot ...") are supported. Match the *released*
+// target, not another target which happens to be idle.
+function panelReleaseStatus(text, target) {
+    const slot = PANEL_SLOTS[target];
+    if (!slot) return null;
+    const lines = String(text || '').split('\n');
+    const pattern = new RegExp('^\\s*target\\s+' + target +
+        '\\s*:?\\s+slot\\s+0x0*' + slot + '\\b', 'i');
+    const line = lines.find(v => pattern.test(v));
+    if (!line) return null;
+    // The state follows the dimensions, e.g. "1920x720: idle; scene published".
+    const state = /\b\d+x\d+\s*:\s*([a-z_-]+)/i.exec(line);
+    if (!state) return null;
+    const row = lines.find(v => new RegExp('^\\s*slot\\s+0x0*'+slot+'\\s+status\\b','i').test(v));
+    const scene = /\bscene\s+(0x[0-9a-f]+)/i.exec(line);
+    const mapped = !!(row && scene && row.split(',').some(part => {
+        const m = /(0x[0-9a-f]+)\s+class\s+\d+\s+map\s+(\d+)/i.exec(part);
+        return m && parseInt(m[1],16) === parseInt(scene[1],16) && Number(m[2]) !== 0;
+    }));
+    return { line, state: state[1].toLowerCase(), mapped,
+        idle: state[1].toLowerCase() === 'idle' && !mapped };
+}
 
 class ClusterLayers {
     constructor(log, socket, client) {
@@ -67,6 +92,9 @@ class ClusterLayers {
         this.recoveryState = 'not requested';
         this.recoveryRequestedAt = 0;
         this.recoveryStatusAt = 0;
+        this.recoveryTarget = null;
+        this.releaseConfirmed = false;
+        this.lastRecoveryReport = '';
         this.options = { layout: 'stock', accent: 'm', phoneBadge: false, wazeMap: 'auto',
             sixwbTheme: 'comfort', sixwbColorSource: 'original',
             colorMode: 'palette', colorBrightness: 100,
@@ -109,19 +137,27 @@ class ClusterLayers {
                 this.panelTargetReason = reason || '';
                 this.log.info('panel target ' + target + ': ' + this.panelTargetState +
                     (reason ? ' ' + reason : ''));
+                // An idle event is a prompt to request fresh renderer status,
+                // not proof of restored factory graphics by itself.
+                if (target === this.recoveryTarget && this.recoveryRequestedAt &&
+                    !this.panelRef && !this.armedUntil && state === 'idle')
+                    this.pollStatus(true);
             }
         });
         this.cr.on('status', (value) => {
             this.rendererStatusText = String(value || '').slice(0, 24000);
-            if (this.recoveryRequestedAt && !this.panelRef) {
-                const panel = this.rendererStatusText.split('\n')
-                    .find((line) => /^target panel slot 0x203 /i.test(line));
-                if (panel) {
-                    this.recoveryStatusAt = Date.now();
-                    this.recoveryState = /[:;]\s*idle(?:[;\s]|$)/i.test(panel) ?
-                        'panel idle (BMW media NOT verified)' :
-                        'panel not idle (recovery NOT verified)';
-                    this.tracePanel('post-release: ' + panel.slice(0, 300));
+            if (this.recoveryRequestedAt && !this.panelRef && !this.armedUntil) {
+                const report = panelReleaseStatus(this.rendererStatusText, this.recoveryTarget);
+                const before = this.releaseConfirmed;
+                this.releaseConfirmed = !!(report && report.idle);
+                this.recoveryStatusAt = report ? Date.now() : 0;
+                this.recoveryState = this.releaseConfirmed ? 'panel idle (BMW media NOT verified)' :
+                    report ? 'panel ' + report.state + (report.mapped ? ' (scene still mapped)' : '') +
+                        ' (release pending)' : 'release pending: no matching target status';
+                const summary = this.recoveryState + (report ? ' | ' + report.line.slice(0,170) : '');
+                if (summary !== this.lastRecoveryReport || before !== this.releaseConfirmed) {
+                    this.lastRecoveryReport = summary;
+                    this.tracePanel('post-release: ' + summary);
                 }
             }
             this.rendererStatusAt = Date.now();
@@ -170,6 +206,9 @@ class ClusterLayers {
         if (this.badgeRef) { this.cr.drop(this.badgeRef); this.badgeRef = 0; }
         this.recoveryRequestedAt = Date.now();
         this.recoveryStatusAt = 0;
+        this.recoveryTarget = this.activePanelTarget;
+        this.releaseConfirmed = false;
+        this.lastRecoveryReport = '';
         this.recoveryState = 'release requested; BMW music unverified';
         this.disarmReason = 'All Custom Cluster graphics released (BMW media unverified)';
         this.tracePanel('restore requested: drop own layers, disconnect renderer client');
@@ -242,7 +281,8 @@ class ClusterLayers {
     pollStatus(force) {
         if (!this.ready) return;
         const now = Date.now();
-        const wait = this.panelRef ? 1500 : 8000;
+        const recovering = this.recoveryRequestedAt && !this.releaseConfirmed;
+        const wait = recovering ? 1000 : this.panelRef ? 1500 : 8000;
         if (force || now - this.lastStatusRequestAt >= wait) {
             this.lastStatusRequestAt = now;
             this.cr.status();
@@ -261,11 +301,11 @@ class ClusterLayers {
         }
         if (!this.parked()) { this.disarmReason = this.testGuard(); this.tracePanel('test refused: ' + this.disarmReason); return false; }
         // Do not stack requests on top of a release with unconfirmed slot state.
-        if (this.recoveryRequestedAt &&
-            (!this.recoveryStatusAt ||
-             this.recoveryState.indexOf('panel idle') !== 0)) {
-            this.disarmReason = 'Prior panel release not confirmed; use Restore BMW and check OEM media';
-            this.tracePanel('test refused: ' + this.disarmReason);
+        if (this.recoveryRequestedAt && (!this.releaseConfirmed || !this.recoveryStatusAt ||
+            Date.now() - this.recoveryStatusAt > 10000)) {
+            this.disarmReason = 'Previous panel release awaiting fresh idle status; check BMW media and retry';
+            this.tracePanel('test waiting: ' + this.disarmReason);
+            this.pollStatus(true);
             return false;
         }
         if (!this.ready) { this.disarmReason = 'Renderer not connected'; this.tracePanel('test refused: ' + this.disarmReason); return false; }
@@ -275,6 +315,11 @@ class ClusterLayers {
             this.tracePanel('test refused: ' + this.disarmReason);
             return false;
         }
+        this.recoveryRequestedAt = 0;
+        this.recoveryStatusAt = 0;
+        this.recoveryTarget = null;
+        this.releaseConfirmed = false;
+        this.lastRecoveryReport = '';
         this.suspended = false;
         this.activePanelTarget = target;
         // Saved 'design' settings are migrated to the bounded layer probe.
@@ -391,6 +436,7 @@ class ClusterLayers {
             rendererStatusAt: this.rendererStatusAt,
             lastRefusal: this.lastRefusal, disarmReason: this.disarmReason,
             recoveryState: this.recoveryState, recoveryRequestedAt: this.recoveryRequestedAt,
+            recoveryTarget: this.recoveryTarget, releaseConfirmed: this.releaseConfirmed,
             suspended: this.suspended,
             testGuard: this.testGuard(),
             secondsLeft: this.panelRef ? Math.max(0, Math.ceil((this.armedUntil - Date.now()) / 1000)) : 0,
@@ -403,4 +449,4 @@ class ClusterLayers {
         this.cr.close();
     }
 }
-module.exports = { ClusterLayers, MODES, COLORS, PANEL_TEST_MS };
+module.exports = { ClusterLayers, MODES, COLORS, PANEL_TEST_MS, panelReleaseStatus };
