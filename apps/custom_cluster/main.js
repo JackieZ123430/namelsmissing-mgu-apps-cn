@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Custom Cluster 0.6.2 - scrollable current-session console and guarded renderer probes.
+ * Custom Cluster 0.6.3 - reliable renderer release recognition and readable live diagnostics.
  * Stock is the default. Real values only can reach cluster-render; emulator
  * and demo values stay exclusively on the centre-screen preview.
  */
@@ -18,7 +18,15 @@ const QR = require('./cluster_diagnostics.js');
 const { LiveLog } = require('./live_log.js');
 
 function fmt(v, unit) { return G.isNum(v) ? String(Math.round(v)) + (unit || '') : '--'; }
-function ageText(age) { return age === null ? 'no sample' : age + 's old'; }
+function ageText(age) { return age == null ? 'no sample' : age + 's old'; }
+function testSummary(st) {
+    return 'selector=' + (st.gearPosition || '?') +
+        ' speed=' + st.speedKmh + ' rpm=' + st.engineRpm +
+        ' ages=' + st.speedAgeSeconds + '/' + st.rpmAgeSeconds + 's' +
+        ' panel=' + (st.panelActive ? 'active' : 'off') +
+        ' slot=' + st.panelTargetState +
+        ' release=' + (st.recoveryRequestedAt ? (st.releaseConfirmed ? 'confirmed' : 'pending') : 'n/a');
+}
 
 mgu.run({
     async start(ctx) {
@@ -48,7 +56,8 @@ mgu.run({
         const car = new Car(Object.assign({}, ctx, { log }), ['rpm', 'speed', 'temps', 'gear'], { pollMs: 5000 });
         const cluster = new ClusterLayers(log);
         cluster.setTraceSink((line) => {
-            journal.write('PANEL ' + line);
+            // tracePanel already carries a UTC timestamp: avoid printing it twice.
+            journal.write('PANEL ' + line.replace(/^\d{4}-\d{2}-\d{2}T[0-9:.]+Z\s+/, ''));
             // Always save a separate full text snapshot when a real panel
             // attempt ENDS, regardless of whether QR Logs was ever opened.
             if (line.indexOf('restore requested:') >= 0)
@@ -165,10 +174,14 @@ mgu.run({
                 return;
             }
             uiEvent('parked test clicked');
-            journal.write('TEST REQUEST before=' + JSON.stringify(cluster.status()));
+            journal.write('TEST REQUEST ' + testSummary(cluster.status()));
+            diskJournal.write('TEST REQUEST details=' + JSON.stringify(cluster.status()));
             const enabled = cluster.armPanel();
-            journal.write('TEST RESULT armed=' + enabled + ' state=' + JSON.stringify(cluster.status()));
-            if (!enabled && /stale|no complete sample|release not confirmed|Renderer not connected|not ready|Prior panel/i.test(cluster.status().disarmReason)) {
+            const result = cluster.status();
+            journal.write('TEST RESULT armed=' + enabled + ' | ' + testSummary(result));
+            journal.write('TEST REASON ' + result.disarmReason);
+            diskJournal.write('TEST RESULT details=' + JSON.stringify(result));
+            if (!enabled && /stale|no complete sample|release not confirmed|Renderer not connected|not ready|Prior panel|release awaiting/i.test(cluster.status().disarmReason)) {
                 // User can always repeat an HMI-only demonstration. It must
                 // not manufacture motion readings or override the KOMBI gate.
                 staticPreviewUntil = Date.now() + 30000;
