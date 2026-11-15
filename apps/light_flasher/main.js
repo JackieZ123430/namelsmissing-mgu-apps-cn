@@ -16,10 +16,11 @@ mgu.run({async start(ctx){
  log.info('Light Flasher startup: '+JSON.stringify(monitor.snapshot()));
  let lastCombined=null, lastRead=0, pending=false, generation=0, exported='', closing=false, connectionState='Not checked', lastError='';
  const feedback=[];let feedbackStatus='No FLM samples recorded';
+ let flashExport='',flashExportError='',flashAttempt=0;
  const transportTests=[];let transportStatus='No transport test recorded',transportInterval=20,transportRun=0,transportCancel=false;
  const intervals=[20,40,60,80,100,150,200,300,500,1000];
  const bgFile=path.join(ctx.dataDir,'light-flasher-background.json');let lastBg='',bgError='';
- const persistBackground=()=>{try{const bg=monitor.snapshot();const raw=JSON.stringify(bg);if(raw!==lastBg){fs.writeFileSync(bgFile+'.tmp',JSON.stringify({...bg,version:'0.1.9',pid:process.pid,writtenAt:new Date().toISOString()},null,2));fs.renameSync(bgFile+'.tmp',bgFile);lastBg=raw;}bgError='';}catch(e){bgError=String(e.message||e);}};
+ const persistBackground=()=>{try{const bg=monitor.snapshot();const raw=JSON.stringify(bg);if(raw!==lastBg){fs.writeFileSync(bgFile+'.tmp',JSON.stringify({...bg,version:'0.1.10',pid:process.pid,writtenAt:new Date().toISOString()},null,2));fs.renameSync(bgFile+'.tmp',bgFile);lastBg=raw;}bgError='';}catch(e){bgError=String(e.message||e);}};
  persistBackground();
  const enabled=()=>settings.get('enabled')===true;
  const guard=new Guard(Date.now,()=>{});
@@ -41,6 +42,7 @@ mgu.run({async start(ctx){
      ui.text('FLASH_CONFIG',text);
      const times=Timing.summarize(flash.trace);const gaps=times.startDispatchGaps;
      ui.text('FLASH_TIMING',gaps?'Measured START dispatch gap: '+gaps.minMs+'-'+gaps.maxMs+' ms (mean '+gaps.meanMs+' ms); not optical timing':'No measured dispatch gap; lamp mode stays in P');
+     ui.text('FLASH_EXPORT',flashExportError?'Auto-save failed: '+flashExportError:flashExport?'Saved: '+flashExport:'Flash log saves automatically after each attempt');
      ui.text('FLASH_STATUS',(flash.cleanupUnconfirmed?'LOCKED: previous cleanup not confirmed':flash.status)+' | '+(g.blockedBy||'P / stationary')+' | OEM beam '+(lastCombined||'unknown')+(lastError?' | '+lastError:''));
    }
    if(ui.isVisible('FLM_FEEDBACK')){
@@ -89,12 +91,32 @@ mgu.run({async start(ctx){
  const flashAllowed=()=>!closing&&settings.get('manualFlash')===true&&ui.isVisible('MAIN')&&!guard.reason()&&lastCombined==='AUS'&&Date.now()-lastLightAt<=2500;
  handler('BTN_FLASH',async()=>{
    if(pending||capture.active||flash.running)throw Error('Another operation in progress');
-   const cfg=getConfig();
-   if(cfg.previewOnly){if(!safe())throw Error('Fast interval: read-only test requires diagnostics enabled and P');transportInterval=cfg.intervalMs;lastError='';transportStatus='Fast interval: read-only test; no lamp commands';return ui.open('TRANSPORT');}
-   if(!flashAllowed())throw Error('Park securely in P, enable manual flash and switch OEM high beam OFF');
-   lastError='';pending=true;
-   try{flashTask=flash.run(cfg,flashAllowed,update);await flashTask}
-   finally{flashTask=null;pending=false;update()}
+   const attempt={id:++flashAttempt,at:new Date().toISOString(),requested:null,outcome:'not started',error:null};
+   flashExport='';flashExportError='';lastError='';
+   pending=true;
+   const previousTrace=flash.trace;
+   let finishAttempt;
+   flashTask=new Promise(resolve=>{finishAttempt=resolve});
+   let task;
+   try{
+     const cfg=getConfig();attempt.requested=cfg;
+     if(cfg.previewOnly){
+       if(!safe())throw Error('Fast interval: read-only test requires diagnostics enabled and P');
+       transportInterval=cfg.intervalMs;transportStatus='Fast interval: read-only test; no lamp commands';attempt.outcome='redirected to read-only test';return ui.open('TRANSPORT');
+     }
+     if(!flashAllowed())throw Error('Park securely in P, enable manual flash and switch OEM high beam OFF');
+     attempt.outcome='started';
+     task=flash.run(cfg,flashAllowed,update);
+     await task;
+     attempt.outcome='finished';
+   }catch(e){attempt.error=String(e.message||e);lastError=attempt.error;attempt.outcome='failed or cancelled';log.warn(lastError)}
+   finally{
+     attempt.endedAt=new Date().toISOString();
+     // Only attach this run's trace when ManualFlash actually started a new run.
+     attempt.newTrace=!!task&&flash.trace!==previousTrace;
+     try{flashExport=saveFlashAttempt(attempt)}catch(e){flashExportError=String(e.message||e);log.warn('Flash autosave: '+flashExportError)}
+     flashTask=null;pending=false;finishAttempt();update();
+   }
  });
  handler('BTN_FLASH_STOP',()=>{flash.cancel();update()});
  handler('BTN_DIAG',()=>{if(flash.running)throw Error('Stop manual flash first');return ui.open('DIAGNOSTICS')});
@@ -120,14 +142,31 @@ mgu.run({async start(ctx){
  [['BTN_NEUTRAL','neutral / released'],['BTN_PULL','pull flasher'],['BTN_PUSH','push high beam'],['BTN_LATCH','continuous high beam / released']]
  .forEach(([id,x])=>handler(id,()=>{capture.mark(x);update()}));
  handler('BTN_STOP',()=>{stop('Stopped manually');update()});
- function saveReport(){
-   if(pending)throw Error('Wait for the read to finish before saving');
-   stop('Saved');const file=path.join(ctx.dataDir,'light-flasher-diagnostics.json');
-   const report={app:'light_flasher',version:'0.1.9',at:new Date().toISOString(),guard:guard.snapshot(),
+ function buildReport(){
+   return {app:'light_flasher',version:'0.1.10',at:new Date().toISOString(),guard:guard.snapshot(),
      bdcIndex:reader.index,identityReply:reader.identityReply,connectionState,lastError,
      tasuAvailable:reader.diag.available,tasuError:reader.diag.error||null,trace:reader.trace.slice(),
      physicalActuation:flash.trace.some(x=>x.tx.startsWith('3101')),manualFlash:{status:flash.status,trace:flash.trace.slice(),cleanupUnconfirmed:flash.cleanupUnconfirmed,config:flash.config,stepsCompleted:flash.stepsCompleted,elapsedMs:flash.elapsedMs,timing:Timing.summarize(flash.trace)},combinedSignal:lastCombined,capture:capture.snapshot(),flmFeedback:feedback.slice(),decodedFeedback:feedback.map(Feedback.sampleState),overrideReadiness:Feedback.limits,backgroundMonitor:monitor.snapshot(),transportTests:transportTests.slice(),feedbackStatus};
-   fs.writeFileSync(file+'.tmp',JSON.stringify(report,null,2));fs.renameSync(file+'.tmp',file);exported=file;update();
+ }
+ function writeReport(file,report){
+   fs.writeFileSync(file+'.tmp',JSON.stringify(report,null,2));fs.renameSync(file+'.tmp',file);
+ }
+ function saveFlashAttempt(attempt){
+   const stamp=attempt.endedAt.replace(/[^0-9]/g,'');
+   const file=path.join(ctx.dataDir,'light-flasher-run-v0.1.10-'+stamp+'-'+process.pid+'-'+attempt.id+'.json');
+   const report=buildReport();report.flashAttempt=attempt;
+   if(!attempt.newTrace){
+     report.physicalActuation=false;
+     report.manualFlash={status:'No fresh actuator run',trace:[],cleanupUnconfirmed:flash.cleanupUnconfirmed,config:attempt.requested,stepsCompleted:0,elapsedMs:0,timing:Timing.summarize([])};
+   }
+   writeReport(file,report);
+   log.info('Flash attempt saved: '+file);
+   return file;
+ }
+ function saveReport(){
+   if(pending)throw Error('Wait for the read to finish before saving');
+   stop('Saved');const file=path.join(ctx.dataDir,'light-flasher-diagnostics.json');
+   writeReport(file,buildReport());exported=file;update();
  }
  handler('BTN_SAVE',saveReport);
  handler('BTN_FB_SAVE',saveReport);

@@ -2,7 +2,7 @@
   "id": "light_flasher",
   "title": "Light Flasher",
   "description": "Passive OEM status monitoring independent of speed, measured diagnostic timings, bounded parked lamp and read-only transport tests.",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "vendor": "custom",
   "loggingId": "OLF1",
   "iconGlyph": "LF",
@@ -183,6 +183,11 @@
           "text3",
           "FLASH_TIMING",
           "No measured diagnostic timing yet"
+        ],
+        [
+          "text3",
+          "FLASH_EXPORT",
+          "Flash log saves automatically after each attempt"
         ],
         [
           "button",

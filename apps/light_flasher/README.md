@@ -1,4 +1,10 @@
-# Light Flasher 0.1.9
+# Light Flasher 0.1.10
+
+## 0.1.10 – Automatic unique flash attempt logs
+
+After an explicit Start flash pattern attempt completes, fails, is blocked or redirects to transport testing, a versioned timestamp/PID/attempt-number JSON file is automatically saved in the existing app data directory. The main menu displays the full saved path or a write error. No extra Save action is needed. The file records the requested settings, outcome/error and fresh actuator trace if a new run actually started. Old traces are not attributed to blocked attempts. Normal diagnostic export remains available. A process crash/power loss before the save completes may prevent an export; the existing cleanup marker is unchanged. No actuation or guard changes.
+
+
 
 ## 0.1.9 – Real timing instrumentation and passive driving observation
 
