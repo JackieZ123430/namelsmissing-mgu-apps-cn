@@ -68,6 +68,7 @@ class ClusterLayers {
         this.effectRef = 0;
         this.panelRef = 0;
         this.panelRefs = [];
+        this.dialNeedles = [];
         this.badgeRef = 0;
         this.ready = false;
         this.layerState = 'inactive';
@@ -117,6 +118,23 @@ class ClusterLayers {
             this.ready = false;
             this.layerState = 'disconnected';
             this.panelLayerState = 'disconnected';
+            // Do not replay an experimental parked panel after a socket loss.
+            if (this.panelRefs.length || this.armedUntil) {
+                this.armedUntil = 0;
+                this.suspended = true;
+                const owned = this.panelRefs.slice();
+                this.panelRefs = []; this.panelRef = 0; this.dialNeedles = [];
+                this.activeTestMode = '';
+                owned.forEach(ref => this.cr.drop(ref));
+                this.recoveryRequestedAt = Date.now();
+                this.recoveryTarget = this.activePanelTarget;
+                this.recoveryStatusAt = 0;
+                this.releaseConfirmed = false;
+                this.lastRecoveryReport = '';
+                this.recoveryState = 'connection lost; release pending';
+                this.disarmReason = 'Renderer connection lost; parked test stopped';
+                this.tracePanel('test ended: renderer disconnected; own refs dropped; no replay');
+            }
         });
         this.cr.on('layer', (ref, state, reason) => {
             if (this.panelRefs.indexOf(ref) >= 0 || ref === this.panelRef && ref !== 0) {
@@ -124,6 +142,10 @@ class ClusterLayers {
                 this.panelLayerState = state;
                 this.panelLayerReason = reason || '';
                 this.log.info('panel layer ' + state + (reason ? ': ' + reason : ''));
+                if (state === 'error' && this.armedUntil) {
+                    this.disarm('Panel layer error: ' + (reason || 'unknown'));
+                    return;
+                }
             } else if (ref === this.effectRef || ref === this.badgeRef) {
                 this.layerState = state;
             }
@@ -180,6 +202,8 @@ class ClusterLayers {
             this.tracePanel('renderer refused ' + op + ' ref=' + ref + ': ' + reason);
             this.lastRefusal = op + ' ref=' + ref + ': ' + reason;
             this.log.warn('cluster ' + this.lastRefusal);
+            if (this.armedUntil && this.panelRefs.indexOf(ref) >= 0)
+                this.disarm('Renderer refused owned layer: ' + this.lastRefusal);
         });
         this.cr.connect();
     }
@@ -208,6 +232,7 @@ class ClusterLayers {
             (this.panelRef ? [this.panelRef] : []);
         this.panelRefs = [];
         this.panelRef = 0;
+        this.dialNeedles = [];
         owned.forEach(ref => this.cr.drop(ref));
         if (this.effectRef) { this.cr.drop(this.effectRef); this.effectRef = 0; }
         if (this.badgeRef) { this.cr.drop(this.badgeRef); this.badgeRef = 0; }
@@ -240,7 +265,18 @@ class ClusterLayers {
             this.suspended = true; // stock never requests a custom display
         }
         if (previous.layout !== options.layout || previous.panelTarget !== options.panelTarget ||
-            previous.panelTestMode !== options.panelTestMode) this.disarm('Panel settings changed');
+            previous.panelTestMode !== options.panelTestMode ||
+            options.enablePanelTests === false ||
+            (this.activeTestMode === 'sixwb_dials' &&
+                (previous.sixwbTheme !== options.sixwbTheme ||
+                 previous.sixwbColorSource !== options.sixwbColorSource ||
+                 previous.colorMode !== options.colorMode ||
+                 previous.accent !== options.accent ||
+                 previous.rgbRed !== options.rgbRed ||
+                 previous.rgbGreen !== options.rgbGreen ||
+                 previous.rgbBlue !== options.rgbBlue ||
+                 previous.colorBrightness !== options.colorBrightness)))
+            this.disarm('Panel settings changed');
         this.apply();
     }
     sample(d) {
@@ -306,6 +342,16 @@ class ClusterLayers {
             this.tracePanel('test refused: ' + this.disarmReason);
             return false;
         }
+        if (this.options.enablePanelTests === false || this.options.panelTestMode === 'preview') {
+            this.disarmReason = 'Experimental KOMBI test not enabled';
+            return false;
+        }
+        if (this.options.panelTestMode === 'sixwb_dials' &&
+            (this.options.layout !== 'sixwb' || this.panelTarget() !== 'panel')) {
+            this.disarmReason = '6WB dials need BMW 6WB layout and standard panel';
+            this.tracePanel('test refused: ' + this.disarmReason);
+            return false;
+        }
         if (!this.parked()) { this.disarmReason = this.testGuard(); this.tracePanel('test refused: ' + this.disarmReason); return false; }
         // Do not stack requests on top of a release with unconfirmed slot state.
         if (this.recoveryRequestedAt && (!this.releaseConfirmed || !this.recoveryStatusAt ||
@@ -332,7 +378,8 @@ class ClusterLayers {
         this.suspended = false;
         this.activePanelTarget = target;
         // Saved 'design' settings are migrated to the bounded layer probe.
-        this.activeTestMode = ['pieces','design'].indexOf(this.options.panelTestMode) >= 0 ? 'pieces' : 'probe';
+        this.activeTestMode = this.options.panelTestMode === 'sixwb_dials' ? 'sixwb_dials' :
+            ['pieces','design'].indexOf(this.options.panelTestMode) >= 0 ? 'pieces' : 'probe';
         this.panelTargetState = 'requesting';
         this.panelTargetReason = '';
         this.panelLayerState = 'requesting';
@@ -345,7 +392,7 @@ class ClusterLayers {
         this.disarmReason = this.activeTestMode + ' test: 12 seconds maximum';
         this.apply();
         this.pollStatus(true);
-        return true;
+        return !!this.panelRef && !!this.armedUntil;
     }
     disarm(reason) {
         const hadPanel = !!this.panelRef;
@@ -364,6 +411,35 @@ class ClusterLayers {
             return;
         }
         const panelActive = (mode === 4 || mode === 5 || mode === 6) && this.armedUntil > Date.now() && this.parked();
+        if (panelActive && !this.panelRef && this.activeTestMode === 'sixwb_dials') {
+            try {
+                const { buildDials } = require('./sixwb_dials.js');
+                const accent = resolve6WBColor(this.options, Date.now());
+                this.dialNeedles = buildDials(this.cr, this.activePanelTarget, this.data,
+                    this.options, accent, colorHex(accent), ref => {
+                        this.panelRefs.push(ref);
+                        if (!this.panelRef) this.panelRef = ref;
+                    });
+                this.panelRefs.forEach(ref => this.cr.set(ref, { visible: true }));
+                this.lastSent = Date.now();
+                this.tracePanel('6WB side dials: two faces + two real-value needles; visibility requested; refs=' +
+                    this.panelRefs.join(',') + '; map window untouched; OEM media unverified');
+            } catch (e) {
+                this.tracePanel('6WB dial creation failed: ' + String(e.message || e));
+                this.restoreOriginal();
+                return;
+            }
+        }
+        if (panelActive && this.panelRef && this.activeTestMode === 'sixwb_dials' &&
+            Date.now() - this.lastSent >= 150) {
+            try {
+                require('./sixwb_dials.js').updateDials(this.cr, this.dialNeedles, this.data);
+                this.lastSent = Date.now();
+            } catch (e) {
+                this.disarm('6WB update failed: ' + String(e.message || e));
+                return;
+            }
+        }
         if (panelActive && !this.panelRef) {
             const multiple = this.activeTestMode === 'pieces';
             const specs = multiple ? [
