@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Custom Cluster 0.6.3 - reliable renderer release recognition and readable live diagnostics.
+ * Custom Cluster 0.6.4 - selectable 6WB dial artwork and guarded live needles.
  * Stock is the default. Real values only can reach cluster-render; emulator
  * and demo values stay exclusively on the centre-screen preview.
  */
@@ -19,6 +19,9 @@ const { LiveLog } = require('./live_log.js');
 
 function fmt(v, unit) { return G.isNum(v) ? String(Math.round(v)) + (unit || '') : '--'; }
 function ageText(age) { return age == null ? 'no sample' : age + 's old'; }
+function testName(mode) {
+    return ({ preview: 'HMI only', probe: 'One marker', design: '3 diagnostic markers', pieces: '3 diagnostic markers', sixwb_dials: '6WB dials' })[mode] || mode;
+}
 function testSummary(st) {
     return 'selector=' + (st.gearPosition || '?') +
         ' speed=' + st.speedKmh + ' rpm=' + st.engineRpm +
@@ -114,7 +117,8 @@ mgu.run({
             ui.text('BTN_TEST', currentPage === 'DIAGNOSTICS' ? 'Restore BMW' :
                 currentPage === 'MAIN' ?
                     (!settings.get('enablePanelTests') || settings.get('panelTestMode') === 'preview' ?
-                        'Static HMI preview' : 'Parked panel test') :
+                        'Static HMI preview' : settings.get('panelTestMode') === 'sixwb_dials' ?
+                            '6WB dial test' : 'Parked panel test') :
                     'Back to cluster');
             ui.text('BTN_DIAG', currentPage === 'QR_REPORT' ?
                 (clearArmedUntil > Date.now() ? 'Confirm delete' : 'Delete logs') :
@@ -144,6 +148,7 @@ mgu.run({
                 rgbGreen: settings.get('rgbGreen'), rgbBlue: settings.get('rgbBlue'),
                 colorBrightness: settings.get('colorBrightness'), cycleSeconds: settings.get('cycleSeconds'),
                 phoneBadge: !!settings.get('phoneBadge'), wazeMap: settings.get('wazeMap'),
+                enablePanelTests: !!settings.get('enablePanelTests'),
                 panelTestMode: settings.get('panelTestMode'), panelTarget: settings.get('panelTarget') });
             bridge.setEnabled(!!settings.get('phoneBridge'));
             waze.setChoice(settings.get('wazeMap'));
@@ -466,7 +471,7 @@ mgu.run({
             cv.text('Layer: ' + st.panelLayer.slice(0, 29) +
                 '  / Slot: ' + st.panelTargetState.slice(0, 12), 1150, 257, 16, t.dim);
             cv.text('Test: ' + (!settings.get('enablePanelTests') || previewActive ? 'HMI ONLY' :
-                st.activeTestMode || settings.get('panelTestMode')) +
+                testName(st.activeTestMode || settings.get('panelTestMode'))) +
                 ' @ ' + settings.get('panelTarget'), 1150, 286, 16, t.dim);
             cv.text('Last: ' + st.disarmReason.slice(0, 39), 1150, 314, 16, t.dim);
             cv.text('Waze: ' + waze.status.slice(0, 34), 1150, 341, 18, t.text);
