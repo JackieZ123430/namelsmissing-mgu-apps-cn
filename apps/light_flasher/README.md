@@ -1,4 +1,12 @@
-# Light Flasher 0.1.5
+# Light Flasher 0.1.6
+
+## 0.1.6 – Autostart passive monitor and simulation timings
+
+MGU Store builds now carry mguAppStartType=autostart in both archives using the existing scoped startup packaging helper. This starts the OAP app process, not a separate systemd service, without requiring the menu to be opened (actual vehicle boot behavior still needs verification). Background status monitor is enabled by default and can be switched off. It observes the already subscribed combined OEM light status only while the existing stationary/P guard is valid; no background UDS reads, no automatic flash trigger, no changes to vehicle lights. The combined signal still cannot distinguish a lever pull from sustained high beam. The JSON export includes app start reason, start time, first visible MAIN time and bounded status-transition samples. The status line shows observations before first opening; zero observations alone does not establish that autostart failed. No radio button action is implemented.
+
+Existing 20/40/60/80 ms choices are newly available for text simulation only. Physical tests reject these settings rather than silently clamp them. Existing 100 ms and above remain requested intervals, not guaranteed physical timing; serialized TASU requests and mandatory STOP/cleanup prevent accurate sub-100 ms actuation. No change to physical actuation behavior, foreground guard or OEM suppression readiness.
+
+
 
 ## 0.1.5 – Manual pattern uses saved settings
 

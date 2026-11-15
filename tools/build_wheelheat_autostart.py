@@ -18,6 +18,7 @@ import tempfile
 
 
 APP_ID = "g21_wheelheat"
+AUTOSTART_APPS = (APP_ID, "light_flasher")
 START_TYPES = ("autostart", "manually")
 MGU_MEMBERS = ("meta.json", "source", "rhmiData", "rhmiDataStartWidget", "oapgen")
 
@@ -49,36 +50,38 @@ def _create_archive(directory, output_path, roots):
         raise
 
 
-def _check_archive(archive_path, member, start_type):
+def _check_archive(archive_path, member, start_type, app_id=APP_ID):
     with tarfile.open(archive_path, "r:gz") as archive:
         package_file = archive.extractfile(member)
         if not package_file:
             raise BuildError(str(archive_path) + " has no " + member)
         package = json.load(package_file)
-        if package.get("name") != APP_ID or package.get("mguAppStartType") != start_type:
+        if package.get("name") != app_id or package.get("mguAppStartType") != start_type:
             raise BuildError(str(archive_path) + " lacks requested app start type")
 
 
-def patch_artifacts(repo_root, start_type="autostart"):
+def patch_artifacts(repo_root, start_type="autostart", app_id=APP_ID):
+    if app_id not in AUTOSTART_APPS:
+        raise BuildError("Unsupported autostart app: " + str(app_id))
     if start_type not in START_TYPES:
         raise BuildError("Unknown start type: " + str(start_type))
-    spec = _read_json(repo_root / "apps" / APP_ID / "app.json")
-    if spec.get("id") != APP_ID or spec.get("mguAppStartType") not in START_TYPES:
-        raise BuildError("WheelHeat manifest has no supported app start type")
+    spec = _read_json(repo_root / "apps" / app_id / "app.json")
+    if spec.get("id") != app_id or spec.get("mguAppStartType") not in START_TYPES:
+        raise BuildError("App manifest has no supported app start type")
     version = spec["version"]
     if not isinstance(version, str) or version.count(".") != 2:
         raise BuildError("Invalid version in WheelHeat manifest")
 
     dist = repo_root / "dist"
-    stage = dist / APP_ID
+    stage = dist / app_id
     package_path = stage / "source" / "package.json"
     package = _read_json(package_path)
-    if package.get("name") != APP_ID or package.get("version") != version:
+    if package.get("name") != app_id or package.get("version") != version:
         raise BuildError("Staged app/version mismatch; rebuild using your SDK")
     package["mguAppStartType"] = start_type
 
-    npm = dist / (APP_ID + "@" + version + ".tgz")
-    mgu = dist / (APP_ID + "@" + version + ".mgu")
+    npm = dist / (app_id + "@" + version + ".tgz")
+    mgu = dist / (app_id + "@" + version + ".mgu")
     if not npm.is_file() or not mgu.is_file() or not (stage / "meta.json").is_file():
         raise BuildError("Expected SDK .tgz, .mgu and meta.json are missing")
 
@@ -90,7 +93,7 @@ def patch_artifacts(repo_root, start_type="autostart"):
         pending.append((_create_archive(stage, mgu, ((n, n) for n in MGU_MEMBERS)), mgu,
                         "source/package.json"))
         for temporary, _output, member in pending:
-            _check_archive(temporary, member, start_type)
+            _check_archive(temporary, member, start_type, app_id)
         for temporary, output, _member in pending:
             os.replace(temporary, output)
     finally:

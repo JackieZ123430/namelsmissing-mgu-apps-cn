@@ -1,8 +1,8 @@
 {
   "id": "light_flasher",
   "title": "Light Flasher",
-  "description": "Configurable bounded manual parked FLM flash test, read-only BDC / FLM diagnostics. No OEM suppression.",
-  "version": "0.1.5",
+  "description": "Autostart passive parked light monitor, manual parked lamp test and simulated patterns. No OEM suppression or background actuation.",
+  "version": "0.1.6",
   "vendor": "custom",
   "loggingId": "OLF1",
   "iconGlyph": "LF",
@@ -32,6 +32,12 @@
       "label": "Enable diagnostic mode (no lamp commands)",
       "type": "bool",
       "default": false
+    },
+    {
+      "key": "backgroundMonitor",
+      "label": "Background status monitor (read only)",
+      "type": "bool",
+      "default": true
     },
     {
       "key": "manualFlash",
@@ -69,6 +75,22 @@
       "type": "choice",
       "default": "100",
       "options": [
+        [
+          "20",
+          "20 ms (simulation only)"
+        ],
+        [
+          "40",
+          "40 ms (simulation only)"
+        ],
+        [
+          "60",
+          "60 ms (simulation only)"
+        ],
+        [
+          "80",
+          "80 ms (simulation only)"
+        ],
         [
           "100",
           "100 ms"
@@ -133,6 +155,11 @@
           "Manual parked flash disabled by default."
         ],
         [
+          "text3",
+          "BG_STATUS",
+          "Background monitor awaiting status"
+        ],
+        [
           "button",
           "BTN_FLASH",
           "Start flash pattern (P, high beam OFF)"
@@ -165,7 +192,7 @@
         [
           "text3",
           "NOTICE",
-          "Private property only, stationary in P. Bounded manual pattern; no OEM suppression or auto-trigger. Clear area in front."
+          "Background monitor is read-only. Manual lamp test only in P on private property; 20-80 ms simulation only. No OEM suppression or automatic activation."
         ]
       ]
     },
@@ -305,5 +332,6 @@
         ]
       ]
     }
-  ]
+  ],
+  "mguAppStartType": "autostart"
 }

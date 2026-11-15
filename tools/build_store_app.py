@@ -2,7 +2,7 @@
 """MGU Store source-repository build entry point.
 
 The store invokes this script as `python3 tools/build_store_app.py <app-id>`.
-All apps use the repository's existing BMW-SDK build tool; WheelHeat also gets
+All apps use the repository's existing BMW-SDK build tool; explicitly supported autostart apps also get
 the native mgu-deploy startup mode from its app.json added to both archives.
 No head-unit files, service units or other installed apps are modified here.
 """
@@ -11,7 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from build_wheelheat_autostart import APP_ID, START_TYPES, BuildError, _read_json, patch_artifacts
+from build_wheelheat_autostart import AUTOSTART_APPS, START_TYPES, BuildError, _read_json, patch_artifacts
 
 
 def main(argv=None):
@@ -29,12 +29,12 @@ def main(argv=None):
     try:
         subprocess.run([sys.executable, str(root / "kit" / "tools" / "build.py"), app_id],
                        cwd=root, check=True)
-        if app_id == APP_ID:
-            start_type = _read_json(root / "apps" / APP_ID / "app.json").get("mguAppStartType")
+        if app_id in AUTOSTART_APPS:
+            start_type = _read_json(root / "apps" / app_id / "app.json").get("mguAppStartType")
             if start_type not in START_TYPES:
-                raise BuildError("Unsupported WheelHeat start type: " + str(start_type))
-            npm, mgu = patch_artifacts(root, start_type)
-            print("Verified WheelHeat " + start_type + " metadata in " + str(npm) + " and " + str(mgu))
+                raise BuildError("Unsupported app start type: " + str(start_type))
+            npm, mgu = patch_artifacts(root, start_type, app_id=app_id)
+            print("Verified " + app_id + " " + start_type + " metadata in " + str(npm) + " and " + str(mgu))
     except (BuildError, OSError, subprocess.CalledProcessError, ValueError) as exc:
         print("MGU Store build failed: " + str(exc), file=sys.stderr)
         return 1

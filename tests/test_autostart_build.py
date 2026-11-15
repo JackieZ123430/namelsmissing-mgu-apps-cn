@@ -62,6 +62,33 @@ class AutostartPackageTests(unittest.TestCase):
         builder.patch_artifacts(self.repo, "autostart")
         self.check_package(self.mgu, "source/package.json", "autostart")
 
+    def test_light_flasher_autostart_is_scoped(self):
+        app_id = "light_flasher"
+        version = "0.1.6"
+        app = self.repo / "apps" / app_id
+        app.mkdir(parents=True)
+        (app / "app.json").write_text(json.dumps({"id": app_id, "version": version,
+                                                  "mguAppStartType": "autostart"}))
+        stage = self.repo / "dist" / app_id
+        (stage / "source").mkdir(parents=True)
+        (stage / "source" / "package.json").write_text(json.dumps({"name": app_id, "version": version}))
+        (stage / "meta.json").write_text("{}")
+        npm = self.repo / "dist" / (app_id + "@" + version + ".tgz")
+        mgu = self.repo / "dist" / (app_id + "@" + version + ".mgu")
+        for out, roots in ((npm, (("source", "package"),)),
+                           (mgu, (("source", "source"), ("meta.json", "meta.json")))):
+            builder._create_archive(stage, out, roots).replace(out)
+        old_heat = self.npm.read_bytes()
+        builder.patch_artifacts(self.repo, "autostart", app_id=app_id)
+        for out, member in ((npm, "package/package.json"), (mgu, "source/package.json")):
+            with tarfile.open(out, "r:gz") as archive:
+                pkg = json.load(archive.extractfile(member))
+                self.assertEqual(pkg["name"], app_id)
+                self.assertEqual(pkg["mguAppStartType"], "autostart")
+        self.assertEqual(old_heat, self.npm.read_bytes())
+        with self.assertRaises(builder.BuildError):
+            builder.patch_artifacts(self.repo, "autostart", app_id="other")
+
     def test_wrong_version_fails_before_overwriting_archives(self):
         old_tar = self.npm.read_bytes()
         pkg = self.stage / "source" / "package.json"
