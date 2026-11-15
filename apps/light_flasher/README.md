@@ -1,4 +1,12 @@
-# Light Flasher 0.1.7
+# Light Flasher 0.1.8
+
+## 0.1.8 – Repeatable read-only transport tests and autostart evidence
+
+The transport menu now selects the test interval directly, independent of flash settings. A run number, current selection and newest result first distinguish old results from new ones. A bounded 20–500 ms series runs at most nine pairs of identity reads with a 750 ms pause after each drained pair; it stops on cancellation or an unresolved accepted request. No lamp commands or retries are added. The observed 20 ms vehicle test was rejected at the transport layer for the second module, not by the right ECU itself. No assumption is made about higher intervals.
+
+The existing autostart OAP process writes a small atomic light-flasher-background.json in its dataDir at startup and when passive monitor state changes, even if its menu is unopened. The file includes start time/reason, PID, first menu opening and observed status changes; inspect it over SSH before opening the app and compare its timestamps with the restart. There is no distinct daemon, and vehicle autostart is not yet confirmed. No background TASU requests or actuator commands. The file is local only. Manual flash path and OEM suppression readiness are unchanged.
+
+
 
 ## 0.1.7 – Real transport experiment, no preview menu
 

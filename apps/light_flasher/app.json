@@ -2,7 +2,7 @@
   "id": "light_flasher",
   "title": "Light Flasher",
   "description": "Passive startup monitor, bounded manual parked test, actual two-request TASU transport test. No OEM suppression.",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "vendor": "custom",
   "loggingId": "OLF1",
   "iconGlyph": "LF",
@@ -318,7 +318,7 @@
         [
           "text3",
           "TP_HELP",
-          "Set requested interval in Settings. Two real FLM identity requests, no lamp commands. Second request dispatched without awaiting first reply. No retries."
+          "Two real read-only FLM identity requests per test. No lamp commands. Change interval here; no need to return to Settings."
         ],
         [
           "text3",
@@ -327,8 +327,23 @@
         ],
         [
           "button",
+          "BTN_TP_NEXT",
+          "Next test interval"
+        ],
+        [
+          "button",
           "BTN_TP_START",
           "Run two-request test"
+        ],
+        [
+          "button",
+          "BTN_TP_SWEEP",
+          "Run interval series 20-500 ms"
+        ],
+        [
+          "button",
+          "BTN_TP_CANCEL",
+          "Cancel series"
         ],
         [
           "button",
@@ -338,7 +353,7 @@
         [
           "scroll",
           "TP_LOG",
-          "Send and response timestamps"
+          "Newest test first"
         ],
         [
           "button",
