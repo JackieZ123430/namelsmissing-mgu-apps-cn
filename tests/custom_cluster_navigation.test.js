@@ -22,7 +22,7 @@ for (const screen of spec.screens) {
 
 const clicks = new Map(), pages = [], loops = [], events = [];
 const labels = new Map(), renders = new Map(), drawn = [];
-let reportCount = 0, cleared = 0, clearedMemory = 0, savedTxt = 0, restored = 0, pollRequested = null;
+let reportCount = 0, cleared = 0, clearedMemory = 0, savedTxt = 0, restored = 0, pollRequested = null, lastOptions, armCalls = 0;
 const ui = {
     onClick: (name, fn) => clicks.set(name, fn),
     onVisible: (fn) => events.push(fn),
@@ -32,7 +32,7 @@ const ui = {
 };
 assert.strictEqual(spec.settings.find(s => s.key === 'enablePanelTests').default, false,
     'panel takeover must default to disabled after upgrade');
-const values = { layout: 'g80', enablePanelTests: true, panelTestMode: 'probe', panelTarget: 'panel',
+const values = { layout: 'g80', enablePanelTests: true, panelTestMode: 'sixwb_dials', panelTarget: 'panel202',
     accent: 'm', colorMode: 'palette', colorBrightness: 100, cycleSeconds: 20,
     sixwbTheme: 'comfort', sixwbColorSource: 'original',
     phoneBridge: false, wazeMap: 'auto', phoneBadge: false };
@@ -45,11 +45,11 @@ const ctx = {
     theme: () => ({ bg: '#000', text: '#fff', dim: '#bbb', warn: '#e80' }),
 };
 const cluster = {
-    settings() {}, sample() {}, observeVehicle() {}, apply() {}, pollStatus() {}, badge() {}, close() {},
+    settings(o) { lastOptions = o; }, sample() {}, observeVehicle() {}, apply() {}, pollStatus() {}, badge() {}, close() {},
     clearHistory() { clearedMemory++; },
     restoreOriginal() { restored++; return 'release requested'; },
     setTraceSink() {},
-    armPanel() { return false; },
+    armPanel() { armCalls++; return false; },
     rendererStatus() { return ''; },
     status() { return { disarmReason: 'Selector N - P required', testGuard: 'Selector N - P required',
         rendererBackend: 'id7', ready: true, rendererTargets: 'panel:1920x720', panelActive: false,
@@ -90,6 +90,10 @@ vm.runInNewContext(fs.readFileSync(path.join(root, 'main.js'), 'utf8'), {
     Date, Math, console,
 }, { filename: 'custom_cluster/main.js' });
 assert.deepStrictEqual(loops, ['MAIN']);
+assert.ok(!spec.settings.some(s => s.key === 'panelTestMode' || s.key === 'panelTarget' || s.key === 'demo'));
+assert.strictEqual(lastOptions.layout,'g80');
+assert.strictEqual(lastOptions.panelTestMode,'selected_layout','legacy 6WB mode must be ignored');
+assert.strictEqual(lastOptions.panelTarget,'panel','legacy alternate slot must be ignored');
 assert.strictEqual(pollRequested, 5000, 'read-only polling must be enabled in Custom Cluster');
 for (const screen of spec.screens) for (const [id] of screen.buttons)
     if (id !== 'BTN_SETTINGS') assert.ok(clicks.has(id), 'button handler missing: ' + id);
@@ -102,6 +106,14 @@ async function test() {
     assert.deepStrictEqual(log.view().lines,old,'earlier page remains stationary');
     log.latest();assert.ok(log.view().lines.join(' ').includes('new'));
     log.clear();assert.strictEqual(log.view().total,0);
+    await renders.get('MAIN')();
+    assert.ok(drawn.some(x=>x.includes('G80-inspired')),'main status paints even without preview graphics');
+    clicks.get('BTN_TEST')();
+    assert.equal(armCalls,1,'only a real KOMBI request');
+    values.enablePanelTests=false;
+    clicks.get('BTN_TEST')();
+    assert.equal(armCalls,1,'disabled tests do not request panel');
+    values.enablePanelTests=true;
     clicks.get('BTN_LOG')();
     assert.strictEqual(labels.get('BTN_DIAG'),'Older');
     assert.strictEqual(labels.get('BTN_QR'),'Newer');
@@ -135,7 +147,7 @@ async function test() {
     clicks.get('BTN_QR')(); // wrap without closing the QR screen
     assert.strictEqual(reportCount, 1);
     await clicks.get('BTN_TEST')(); // back to cluster on QR page
-    assert.strictEqual(labels.get('BTN_TEST'), 'Parked panel test');
+    assert.strictEqual(labels.get('BTN_TEST'), 'Test KOMBI');
     await clicks.get('BTN_QR')();
     assert.strictEqual(labels.get('BTN_QR'), 'Next QR page');
     assert.strictEqual(reportCount, 2);
