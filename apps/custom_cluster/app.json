@@ -1,8 +1,8 @@
 {
   "id": "custom_cluster",
   "title": "Custom Cluster",
-  "description": "G80/6WB previews, scrollable diagnostics and repeatable guarded KOMBI layer probes.",
-  "version": "0.6.3",
+  "description": "6WB parked dial prototype, G80/6WB previews, diagnostics and guarded layer tests.",
+  "version": "0.6.4",
   "vendor": "custom",
   "loggingId": "OAQ7",
   "iconGlyph": "CC",
@@ -123,11 +123,15 @@
         ],
         [
           "probe",
-          "One-layer KOMBI probe"
+          "One diagnostic marker"
         ],
         [
           "design",
-          "Three-layer KOMBI probe"
+          "Three diagnostic markers"
+        ],
+        [
+          "sixwb_dials",
+          "6WB round dials (parked prototype)"
         ]
       ]
     },
