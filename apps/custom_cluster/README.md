@@ -1,5 +1,15 @@
-# Custom Cluster 0.6.2 — BMW G21 / MGU iDrive 7
+# Custom Cluster 0.6.3 — BMW G21 / MGU iDrive 7
 
+
+## 0.6.3 — release acknowledgement and concise logs
+
+Vehicle recording (15 Nov 2026) showed three visible probe elements, then their disappearance and return of BMW media after release, as reported by the tester. Repeated requests were blocked locally despite P, 0 km/h, 0 rpm and fresh samples. The actual renderer target status is `target panel: slot 0x203 ...`, whereas the old acknowledgement parser expected no colon.
+
+- Match the actual target/slot and idle state, accepting both renderer spellings; reject idle if the slot table still reports the renderer scene mapped or queued.
+- Poll every second while release is pending and request fresh status on idle events. No delayed automatic re-arm: another manual request is required. The stationary guard and opt-in remain in effect.
+- Preserve full test JSON on disk and show compact test summaries on the console. Log changed renderer status lines rather than repeating identical blocks.
+- Three repeated release/arm cycles passed with a simulated renderer, including the observed colon syntax, lingering state, and release of all owned layers. No claim is made that BMW media or all OEM warnings have been verified by software.
+- The same one/three-layer probes remain. Full G80 and 6WB designs are still previews only. Further hardware tests must be parked; map compatibility and full layout are not established.
 
 ## 0.6.2: Live Logs and staged small-layer renderer investigation
 
