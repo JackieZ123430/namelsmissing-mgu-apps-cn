@@ -1,4 +1,12 @@
-# Light Flasher 0.1.3
+# Light Flasher 0.1.4
+
+## Manual flash (parked one-shot)
+
+Enable manual parked flash in settings (default OFF). With the vehicle securely parked in P, on private property with a clear area in front, keep OEM high beam OFF. Select Flash once on the main screen. The app checks current vehicle speed, P, fresh OEM-off signal and both FLM identities. One short sequential channel-8 pulse per side at 60% uses the existing 1-second ECU routine; STOP and default session are attempted on each side, even on error/cancel. Stop, leaving screen, guard loss and shutdown cancel subsequent starts. Unconfirmed cleanup blocks another run in the same app instance. No zero PWM, OEM suppression, automatic launch/lever trigger, recurring pulses or road use. Physical timing and restoration have not been tested for this app.
+
+The kit marks its app entry point bookmarkable but maps it to the main screen; a favorite button may open Light Flasher (vehicle support unverified). It does not automatically flash. Diagnostics still use read-only requests; manual mode is separate and shares the existing TASU connection.
+
+
 
 ## 0.1.3 – Verified electrical feedback; OEM priority remains unknown
 
@@ -22,7 +30,7 @@ The new Check BDC connection button checks F150 identity and reads E3B8 once. St
 
 
 
-Separate experimental ID7 app. **Read-only diagnostics and simulated pattern preview only.** No live flash actuator, no lever-triggered effect, no background control. The Enable setting controls diagnostic recording.
+Separate experimental ID7 app. **Read-only diagnostics and simulated pattern preview only.** Prior versions had no live flash actuator; current manual parked mode is described above. No lever-triggered effect or background control. The Enable setting controls diagnostic recording.
 
 ## Candidate stalk signal
 

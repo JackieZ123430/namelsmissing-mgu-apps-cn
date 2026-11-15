@@ -1,8 +1,8 @@
 {
   "id": "light_flasher",
   "title": "Light Flasher",
-  "description": "Read-only BDC stalk and headlamp diagnostics with configurable simulated flash patterns. No vehicle light actuation.",
-  "version": "0.1.3",
+  "description": "Parked manual one-shot FLM test, read-only BDC and FLM diagnostics, and simulated patterns. No OEM suppression.",
+  "version": "0.1.4",
   "vendor": "custom",
   "loggingId": "OLF1",
   "iconGlyph": "LF",
@@ -30,6 +30,12 @@
     {
       "key": "enabled",
       "label": "Enable diagnostic mode (no lamp commands)",
+      "type": "bool",
+      "default": false
+    },
+    {
+      "key": "manualFlash",
+      "label": "Enable manual parked flash (private property only)",
       "type": "bool",
       "default": false
     },
@@ -124,7 +130,22 @@
         [
           "text3",
           "STATUS",
-          "Diagnostic mode is OFF. Physical actuation unavailable."
+          "Manual parked flash disabled by default."
+        ],
+        [
+          "button",
+          "BTN_FLASH",
+          "Flash once (P, OEM high beam OFF)"
+        ],
+        [
+          "button",
+          "BTN_FLASH_STOP",
+          "Stop flash"
+        ],
+        [
+          "text3",
+          "FLASH_STATUS",
+          "Idle"
         ],
         [
           "button",
@@ -139,7 +160,7 @@
         [
           "text3",
           "NOTICE",
-          "Only read-only diagnosis is implemented. No automatic trigger and no vehicle light commands."
+          "Manual one-shot only, stationary in P on private property, no OEM suppression. Bookmarks open app; never trigger automatically."
         ]
       ]
     },

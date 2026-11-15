@@ -3,16 +3,19 @@ const mgu=require('./kit/mgu'),fs=require('fs'),path=require('path');
 const Guard=require('./guard');
 const {Reader,Capture}=require('./probe');
 const Feedback=require('./feedback');
+const ManualFlash=require('./manual-flash');
 mgu.run({async start(ctx){
  const {ui,settings,log}=ctx, capture=new Capture(),reader=new Reader(ctx.signals,log);
  let lastCombined=null, lastRead=0, pending=false, generation=0, exported='', closing=false, connectionState='Not checked', lastError='';
  const feedback=[];let feedbackStatus='No FLM samples recorded';
  const enabled=()=>settings.get('enabled')===true;
  const guard=new Guard(Date.now,()=>{});
+ const flash=new ManualFlash(reader.diag,log);let lastLightAt=0,flashTask=null;
  const stop=(why)=>{generation++;capture.stop(why);};
  const update=()=>{
    const g=guard.snapshot(),c=capture.snapshot();
-   ui.text('STATUS',(enabled()?'Diagnostic mode ON':'Diagnostic mode OFF')+' | physical flashing unavailable');
+   ui.text('STATUS',(enabled()?'Diagnostic mode ON':'Diagnostic mode OFF')+' | manual parked flash '+(settings.get('manualFlash')===true?'enabled':'disabled'));
+   if(ui.isVisible('MAIN'))ui.text('FLASH_STATUS',flash.status+' | '+(g.blockedBy||'P / stationary')+' | OEM beam '+(lastCombined||'unknown')+(lastError?' | '+lastError:''));
    if(ui.isVisible('FLM_FEEDBACK')){
      ui.text('FB_STATUS',feedbackStatus+' | '+(g.blockedBy||'P / stationary')+' | Combined light: '+(lastCombined||'unknown')+'\n'+(lastError||'Read-only, no light commands'));
      ui.text('FB_LOG',feedback.slice(-3).map(f=>{
@@ -51,7 +54,16 @@ mgu.run({async start(ctx){
    update();
  };
  const handler=(id,fn)=>ui.onClick(id,()=>Promise.resolve().then(fn).catch(e=>{lastError=String(e.message||e);log.warn(lastError);update()}));
- handler('BTN_DIAG',()=>ui.open('DIAGNOSTICS'));
+ const flashAllowed=()=>!closing&&settings.get('manualFlash')===true&&ui.isVisible('MAIN')&&!guard.reason()&&lastCombined==='AUS'&&Date.now()-lastLightAt<=2500;
+ handler('BTN_FLASH',async()=>{
+   if(pending||capture.active||flash.running)throw Error('Another operation in progress');
+   if(!flashAllowed())throw Error('Park securely in P, enable manual flash and switch OEM high beam OFF');
+   lastError='';pending=true;
+   try{flashTask=flash.run(flashAllowed,update);await flashTask}
+   finally{flashTask=null;pending=false;update()}
+ });
+ handler('BTN_FLASH_STOP',()=>{flash.cancel();update()});
+ handler('BTN_DIAG',()=>{if(flash.running)throw Error('Stop manual flash first');return ui.open('DIAGNOSTICS')});
  async function checkConnection(startCapture){
    if(!valid())throw Error('Enable diagnostic mode and park in P: '+(guard.reason()||'diagnostic mode/page not enabled'));
    if(pending||capture.active)throw Error('Stop previous recording or wait for current read');
@@ -77,10 +89,10 @@ mgu.run({async start(ctx){
  function saveReport(){
    if(pending)throw Error('Wait for the read to finish before saving');
    stop('Saved');const file=path.join(ctx.dataDir,'light-flasher-diagnostics.json');
-   const report={app:'light_flasher',version:'0.1.3',at:new Date().toISOString(),guard:guard.snapshot(),
+   const report={app:'light_flasher',version:'0.1.4',at:new Date().toISOString(),guard:guard.snapshot(),
      bdcIndex:reader.index,identityReply:reader.identityReply,connectionState,lastError,
      tasuAvailable:reader.diag.available,tasuError:reader.diag.error||null,trace:reader.trace.slice(),
-     physicalActuation:false,combinedSignal:lastCombined,capture:capture.snapshot(),flmFeedback:feedback.slice(),decodedFeedback:feedback.map(Feedback.sampleState),overrideReadiness:Feedback.limits,feedbackStatus};
+     physicalActuation:flash.trace.some(x=>x.tx.startsWith('3101')),manualFlash:{status:flash.status,trace:flash.trace.slice(),cleanupUnconfirmed:flash.cleanupUnconfirmed},combinedSignal:lastCombined,capture:capture.snapshot(),flmFeedback:feedback.slice(),decodedFeedback:feedback.map(Feedback.sampleState),overrideReadiness:Feedback.limits,feedbackStatus};
    fs.writeFileSync(file+'.tmp',JSON.stringify(report,null,2));fs.renameSync(file+'.tmp',file);exported=file;update();
  }
  handler('BTN_SAVE',saveReport);
@@ -114,12 +126,12 @@ mgu.run({async start(ctx){
    ui.text('PREVIEW_TEXT',Array.from({length:12},(_,i)=>(i*ms)+' ms: '+recipe[i%recipe.length]).join('\n'));
    return ui.open('PREVIEW');
  };
- handler('BTN_PREVIEW',preview);handler('BTN_PREVIEW_BACK',()=>ui.open('MAIN'));
- settings.onChange(()=>{if(!enabled())stop('Disabled');update()});
- ui.onVisible(()=>{if((capture.active||pending)&&!ui.isVisible('DIAGNOSTICS')&&!ui.isVisible('FLM_FEEDBACK'))stop('Left diagnostics');update()});
- if(ctx.app&&ctx.app.on)ctx.app.on('shutdown',()=>{closing=true;stop('Shutdown')});
- process.on('SIGTERM',()=>{closing=true;stop('Shutdown');process.exit(0)});
- guard.init(ctx.signals,log,v=>{lastCombined=v&&v.statusMainBeam_headlightFlasher;capture.status(v)}).catch(e=>log.warn(String(e)));
+ handler('BTN_PREVIEW',()=>{if(flash.running)throw Error('Stop manual flash first');return preview()});handler('BTN_PREVIEW_BACK',()=>ui.open('MAIN'));
+ settings.onChange(()=>{if(!enabled())stop('Disabled');if(settings.get('manualFlash')!==true)flash.cancel();update()});
+ ui.onVisible(()=>{if(!ui.isVisible('MAIN'))flash.cancel();if((capture.active||pending&&!flash.running)&&!ui.isVisible('DIAGNOSTICS')&&!ui.isVisible('FLM_FEEDBACK'))stop('Left diagnostics');update()});
+ if(ctx.app&&ctx.app.on)ctx.app.on('shutdown',()=>{closing=true;flash.cancel();stop('Shutdown')});
+ process.on('SIGTERM',()=>{closing=true;flash.cancel();stop('Shutdown');if(flashTask){const timer=setTimeout(()=>process.exit(0),6500);flashTask.catch(()=>{}).then(()=>{clearTimeout(timer);process.exit(0)});}else process.exit(0)});
+ guard.init(ctx.signals,log,v=>{lastCombined=v&&v.statusMainBeam_headlightFlasher;lastLightAt=Date.now();capture.status(v)}).catch(e=>log.warn(String(e)));
  reader.init().catch(e=>log.warn(String(e)));
  setInterval(()=>{tick().catch(e=>log.warn(String(e)))},250);
  update();

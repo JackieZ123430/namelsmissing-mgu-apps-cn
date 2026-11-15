@@ -248,7 +248,7 @@
       "id": "light_flasher",
       "kind": "app",
       "title": "Light Flasher",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "path": "apps/light_flasher",
       "mguHmi": [
         "ID7"
