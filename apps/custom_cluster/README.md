@@ -1,5 +1,12 @@
-# Custom Cluster 0.6.5 — BMW G21 / MGU iDrive 7
+# Custom Cluster 0.6.6 — BMW G21 / MGU iDrive 7
 
+
+## 0.6.6 — one KOMBI test, no legacy test selector
+
+- Removed Test content, Panel target and simulated preview data from the user settings. The single Test KOMBI action always sends the selected layout to the standard physical panel, retaining the explicit opt-in, P/fresh-signal guard, 12-second timeout and release acknowledgement. A saved 0.6.4 6WB-only or marker choice is ignored; it cannot block G80 or trigger markers. No iDrive-only fallback.
+- The centre screen is now a lightweight text control/status page rather than a second instrument preview. Diagnostics, QR/TXT and scrollable Live Logs remain. Display exceptions are logged and an error screen is attempted instead of leaving an old page on screen; an active own panel is released if a display exception occurs.
+- The reported 0.6.5 video confirms the old saved 6WB setting conflicted with G80. It does not establish why the old HMI canvas remained on screen, so the preview rendering dependency was removed rather than assuming a specific Canvas failure.
+- No full-screen black masking or change to Waze integration: the exact OEM warning regions and native layer ordering are not verified. The current side artwork remains experimental, original instruments may remain visible, and exact G21 recolouring is unresolved. Do not use these tests while driving.
 
 ## 0.6.5 — one test mode for the selected layout
 
