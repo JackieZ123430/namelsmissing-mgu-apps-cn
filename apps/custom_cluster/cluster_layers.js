@@ -280,7 +280,14 @@ class ClusterLayers {
         this.apply();
     }
     sample(d) {
-        if (!d || d.demo || !finite(d.speed) || !finite(d.rpm) || d.speed < 0 || d.speed > 350 || d.rpm < 0 || d.rpm > 8000) return;
+        if (!d || d.demo || !finite(d.speed) || !finite(d.rpm) || d.speed < 0 || d.speed > 350 || d.rpm < 0 || d.rpm > 8000) {
+            if (this.armedUntil) this.disarm('Invalid or unavailable live vehicle signal');
+            return;
+        }
+        if (this.armedUntil && (d.speed >= 0.5 || d.stage !== 'P')) {
+            this.disarm('Vehicle moved or selector left P');
+            return;
+        }
         if (d.receivedAt) {
             this.latestSignalTimes = d.receivedAt;
             const now = Date.now(), speedAt = d.receivedAt.speed, rpmAt = d.receivedAt.rpm;
@@ -292,6 +299,7 @@ class ClusterLayers {
                         (finite(speedAt) ? Math.round((now - speedAt) / 1000) : '?') +
                         's rpmAge=' + (finite(rpmAt) ? Math.round((now - rpmAt) / 1000) : '?') + 's');
                 }
+                if (this.armedUntil) this.disarm('Independent speed/RPM sample stale');
                 return; // never accept a fresh RPM paired with a stale speed
             }
         }
@@ -306,13 +314,27 @@ class ClusterLayers {
             if (this.armedUntil) { this.disarm('Non-live vehicle data'); this.apply(); }
             return;
         }
+        if (this.armedUntil && (d.stage !== 'P' || !finite(d.speed) || d.speed >= 0.5)) {
+            this.data.stage = d.stage;
+            this.disarm('Vehicle moved, speed unavailable, or selector left P');
+            return;
+        }
         if (this.data.stage !== d.stage) {
             this.data.stage = d.stage;
             this.apply();
         }
     }
     badge(opened) { this.phoneOpen = !!opened; this.apply(); }
-    live() { return !!this.lastSample && Date.now() - this.lastSample < 30000; }
+    live() {
+        if (!this.lastSample || Date.now()-this.lastSample>=30000) return false;
+        const t=this.latestSignalTimes;
+        if (Object.keys(t).length) {
+            const now=Date.now();
+            return finite(t.speed) && finite(t.rpm) && now-t.speed<=SIGNAL_MAX_AGE_MS &&
+                now-t.rpm<=SIGNAL_MAX_AGE_MS && t.speed<=now+1000 && t.rpm<=now+1000;
+        }
+        return true;
+    }
     parked() { return this.live() && this.data.stage === 'P' && this.data.speed >= 0 && this.data.speed < 0.5; }
     testGuard() {
         if (!this.lastSample) return 'Waiting for real speed + RPM (no complete sample yet)';
