@@ -22,7 +22,8 @@ class ManualFlash {
   const check=()=>{if(this.cancelled||!allowed()||!this.diag.available)throw Error('Cancelled or park/OEM-light guard changed')};
   const send=async(m,sid,data,cleanup=false)=>{
    if(!cleanup)check();
-   const rec={at:new Date().toISOString(),side:m.side,tx:hex([sid,...data]),elapsedMs:began===null?null:this.now()-began};this.trace.push(rec);
+   const sentAt=this.now();
+   const rec={at:new Date().toISOString(),side:m.side,tx:hex([sid,...data]),elapsedMs:began===null?null:sentAt-began};this.trace.push(rec);
    try{
     if(!this.diag.available)throw Error('TASU unavailable');
     const u=await this.diag.physical(m.address,sid,data,800,replyTo(sid,data),{maxRetries:0,callTimeoutMs:1000,hardTimeoutMs:1800,pendingTimeoutMs:1000});
@@ -30,6 +31,7 @@ class ManualFlash {
     if(!u||u[0]!==sid+0x40||!replyTo(sid,data)(u))throw Error('FLM '+m.side+' '+rec.tx+' reply '+rec.rx);
     return u;
    }catch(e){rec.error=String(e.message||e);throw e}
+   finally{rec.requestMs=Math.max(0,this.now()-sentAt);}
   };
   const delay=async(ms,limit=Infinity)=>{const until=Math.min(this.now()+ms,limit);while(this.now()<until){check();await this.sleep(Math.min(50,until-this.now()))}};
   const cleanup=async(m,sid,data)=>{try{await send(m,sid,data,true);return true}catch(e){this.cleanupUnconfirmed=true;this.log.warn(String(e));return false}};

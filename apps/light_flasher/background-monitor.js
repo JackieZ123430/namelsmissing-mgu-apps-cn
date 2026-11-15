@@ -8,8 +8,8 @@ class Monitor {
  }
  setEnabled(on){on=on===true;if(this.enabled!==on){this.enabled=on;this.last=null;this.events=[];this.observedBeforeOpen=0;}}
  seeMain(){if(this.firstVisibleAt===null)this.firstVisibleAt=this.now();}
- observe(v,parked,mainVisible){
-  if(!this.enabled||!parked){this.last=null;return;}
+ observe(v,signalAvailable,mainVisible){
+  if(!this.enabled||!signalAvailable){this.last=null;return;}
   const s=v&&v.statusMainBeam_headlightFlasher;
   if(s!=='EIN'&&s!=='AUS'){this.last=null;return;}
   if(s===this.last)return;
@@ -18,7 +18,7 @@ class Monitor {
   this.events.push({at:new Date(this.now()).toISOString(),combinedSignal:s,mainVisible:!!mainVisible});
   if(this.events.length>40)this.events.shift();
  }
- snapshot(){return {mode:'passive only',enabled:this.enabled,startedAt:new Date(this.startedAt).toISOString(),
+ snapshot(){return {mode:'passive only',scope:'valid light signal, independent of gear or speed',enabled:this.enabled,startedAt:new Date(this.startedAt).toISOString(),
    startReason:this.startReason,firstMainVisibleAt:this.firstVisibleAt===null?null:new Date(this.firstVisibleAt).toISOString(),
    observedBeforeOpen:this.observedBeforeOpen,lastCombinedSignal:this.last,events:this.events.slice(),
    automaticActuation:false,leverDistinction:false};}

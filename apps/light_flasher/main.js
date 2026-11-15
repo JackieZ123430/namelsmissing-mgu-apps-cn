@@ -7,6 +7,7 @@ const ManualFlash=require('./manual-flash');
 const {config}=require('./flash-config');
 const Monitor=require('./background-monitor');
 const Transport=require('./transport-probe');
+const Timing=require('./timing');
 mgu.run({async start(ctx){
  const {ui,settings,log}=ctx, capture=new Capture(),reader=new Reader(ctx.signals,log);
  const monitor=new Monitor(Date.now,ctx.app&&ctx.app.startReason);
@@ -18,7 +19,7 @@ mgu.run({async start(ctx){
  const transportTests=[];let transportStatus='No transport test recorded',transportInterval=20,transportRun=0,transportCancel=false;
  const intervals=[20,40,60,80,100,150,200,300,500,1000];
  const bgFile=path.join(ctx.dataDir,'light-flasher-background.json');let lastBg='',bgError='';
- const persistBackground=()=>{try{const bg=monitor.snapshot();const raw=JSON.stringify(bg);if(raw!==lastBg){fs.writeFileSync(bgFile+'.tmp',JSON.stringify({...bg,version:'0.1.8',pid:process.pid,writtenAt:new Date().toISOString()},null,2));fs.renameSync(bgFile+'.tmp',bgFile);lastBg=raw;}bgError='';}catch(e){bgError=String(e.message||e);}};
+ const persistBackground=()=>{try{const bg=monitor.snapshot();const raw=JSON.stringify(bg);if(raw!==lastBg){fs.writeFileSync(bgFile+'.tmp',JSON.stringify({...bg,version:'0.1.9',pid:process.pid,writtenAt:new Date().toISOString()},null,2));fs.renameSync(bgFile+'.tmp',bgFile);lastBg=raw;}bgError='';}catch(e){bgError=String(e.message||e);}};
  persistBackground();
  const enabled=()=>settings.get('enabled')===true;
  const guard=new Guard(Date.now,()=>{});
@@ -27,6 +28,9 @@ mgu.run({async start(ctx){
  const journal={exists:()=>fs.existsSync(marker),mark:()=>fs.writeFileSync(marker,JSON.stringify({at:new Date().toISOString()}),{flag:'wx'}),clear:()=>fs.unlinkSync(marker)};
  const flash=new ManualFlash(reader.diag,log,undefined,Date.now,journal);let lastLightAt=0,flashTask=null;
  const stop=(why)=>{generation++;capture.stop(why);};
+ // Passive observation only, independent of the parked actuator guard.
+ const lightProviderAvailable=()=>!!(guard.speedSub&&guard.speedSub.available);
+ const observeBackground=()=>{monitor.observe(Date.now()-lastLightAt<=2500?{statusMainBeam_headlightFlasher:lastCombined}:null,lightProviderAvailable(),ui.isVisible('MAIN'));persistBackground();};
  const update=()=>{
    const g=guard.snapshot(),c=capture.snapshot();
    if(ui.isVisible('MAIN')){
@@ -35,6 +39,8 @@ mgu.run({async start(ctx){
      ui.text('BG_STATUS','Background monitor '+(bg.enabled?'ON':'OFF')+' | '+bg.startReason+' | Before first opening: '+bg.observedBeforeOpen+' | '+(bg.lastCombinedSignal||'no parked signal')+' (read only)'+(bgError?' | log error: '+bgError:''));
      let text;try{const c=getConfig();text=c.label+' | '+c.intervalMs+' ms '+(c.previewOnly?'transport test only':'requested')+' | '+c.durationMs/1000+' s'}catch(e){text='Invalid flash settings'}
      ui.text('FLASH_CONFIG',text);
+     const times=Timing.summarize(flash.trace);const gaps=times.startDispatchGaps;
+     ui.text('FLASH_TIMING',gaps?'Measured START dispatch gap: '+gaps.minMs+'-'+gaps.maxMs+' ms (mean '+gaps.meanMs+' ms); not optical timing':'No measured dispatch gap; lamp mode stays in P');
      ui.text('FLASH_STATUS',(flash.cleanupUnconfirmed?'LOCKED: previous cleanup not confirmed':flash.status)+' | '+(g.blockedBy||'P / stationary')+' | OEM beam '+(lastCombined||'unknown')+(lastError?' | '+lastError:''));
    }
    if(ui.isVisible('FLM_FEEDBACK')){
@@ -65,7 +71,7 @@ mgu.run({async start(ctx){
  const valid=()=>safe()&&ui.isVisible('DIAGNOSTICS');
  const validFeedback=()=>safe()&&ui.isVisible('FLM_FEEDBACK');
  const tick=async()=>{
-   monitor.observe(Date.now()-lastLightAt<=2500?{statusMainBeam_headlightFlasher:lastCombined}:null,!guard.reason(),ui.isVisible('MAIN'));persistBackground();
+   observeBackground();
    if(capture.active&&(!valid()||Date.now()-capture.started>=60000))stop('Capture ended: state change or time limit');
    if(capture.active&&!pending&&Date.now()-lastRead>=750){
       const id=generation;pending=true;lastRead=Date.now();
@@ -83,9 +89,11 @@ mgu.run({async start(ctx){
  const flashAllowed=()=>!closing&&settings.get('manualFlash')===true&&ui.isVisible('MAIN')&&!guard.reason()&&lastCombined==='AUS'&&Date.now()-lastLightAt<=2500;
  handler('BTN_FLASH',async()=>{
    if(pending||capture.active||flash.running)throw Error('Another operation in progress');
+   const cfg=getConfig();
+   if(cfg.previewOnly){if(!safe())throw Error('Fast interval: read-only test requires diagnostics enabled and P');transportInterval=cfg.intervalMs;lastError='';transportStatus='Fast interval: read-only test; no lamp commands';return ui.open('TRANSPORT');}
    if(!flashAllowed())throw Error('Park securely in P, enable manual flash and switch OEM high beam OFF');
    lastError='';pending=true;
-   try{flashTask=flash.run(getConfig(),flashAllowed,update);await flashTask}
+   try{flashTask=flash.run(cfg,flashAllowed,update);await flashTask}
    finally{flashTask=null;pending=false;update()}
  });
  handler('BTN_FLASH_STOP',()=>{flash.cancel();update()});
@@ -115,10 +123,10 @@ mgu.run({async start(ctx){
  function saveReport(){
    if(pending)throw Error('Wait for the read to finish before saving');
    stop('Saved');const file=path.join(ctx.dataDir,'light-flasher-diagnostics.json');
-   const report={app:'light_flasher',version:'0.1.8',at:new Date().toISOString(),guard:guard.snapshot(),
+   const report={app:'light_flasher',version:'0.1.9',at:new Date().toISOString(),guard:guard.snapshot(),
      bdcIndex:reader.index,identityReply:reader.identityReply,connectionState,lastError,
      tasuAvailable:reader.diag.available,tasuError:reader.diag.error||null,trace:reader.trace.slice(),
-     physicalActuation:flash.trace.some(x=>x.tx.startsWith('3101')),manualFlash:{status:flash.status,trace:flash.trace.slice(),cleanupUnconfirmed:flash.cleanupUnconfirmed,config:flash.config,stepsCompleted:flash.stepsCompleted,elapsedMs:flash.elapsedMs},combinedSignal:lastCombined,capture:capture.snapshot(),flmFeedback:feedback.slice(),decodedFeedback:feedback.map(Feedback.sampleState),overrideReadiness:Feedback.limits,backgroundMonitor:monitor.snapshot(),transportTests:transportTests.slice(),feedbackStatus};
+     physicalActuation:flash.trace.some(x=>x.tx.startsWith('3101')),manualFlash:{status:flash.status,trace:flash.trace.slice(),cleanupUnconfirmed:flash.cleanupUnconfirmed,config:flash.config,stepsCompleted:flash.stepsCompleted,elapsedMs:flash.elapsedMs,timing:Timing.summarize(flash.trace)},combinedSignal:lastCombined,capture:capture.snapshot(),flmFeedback:feedback.slice(),decodedFeedback:feedback.map(Feedback.sampleState),overrideReadiness:Feedback.limits,backgroundMonitor:monitor.snapshot(),transportTests:transportTests.slice(),feedbackStatus};
    fs.writeFileSync(file+'.tmp',JSON.stringify(report,null,2));fs.renameSync(file+'.tmp',file);exported=file;update();
  }
  handler('BTN_SAVE',saveReport);
@@ -177,7 +185,7 @@ mgu.run({async start(ctx){
  ui.onVisible(()=>{if(ui.isVisible('MAIN'))monitor.seeMain();else flash.cancel();persistBackground();if((capture.active||pending&&!flash.running)&&!ui.isVisible('DIAGNOSTICS')&&!ui.isVisible('FLM_FEEDBACK')&&!ui.isVisible('TRANSPORT'))stop('Left diagnostics');update()});
  if(ctx.app&&ctx.app.on)ctx.app.on('shutdown',()=>{closing=true;flash.cancel();stop('Shutdown')});
  process.on('SIGTERM',()=>{closing=true;flash.cancel();stop('Shutdown');if(flashTask){const timer=setTimeout(()=>process.exit(1),10000);flashTask.catch(()=>{}).then(()=>{clearTimeout(timer);process.exit(0)});}else process.exit(0)});
- guard.init(ctx.signals,log,v=>{lastCombined=v&&v.statusMainBeam_headlightFlasher;lastLightAt=Date.now();monitor.observe(v,!guard.reason(),ui.isVisible('MAIN'));persistBackground();capture.status(v)}).catch(e=>log.warn(String(e)));
+ guard.init(ctx.signals,log,v=>{lastCombined=v&&v.statusMainBeam_headlightFlasher;lastLightAt=Date.now();observeBackground();capture.status(v)}).catch(e=>log.warn(String(e)));
  reader.init().catch(e=>log.warn(String(e)));
  setInterval(()=>{tick().catch(e=>log.warn(String(e)))},250);
  update();

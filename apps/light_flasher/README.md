@@ -1,4 +1,12 @@
-# Light Flasher 0.1.8
+# Light Flasher 0.1.9
+
+## 0.1.9 – Real timing instrumentation and passive driving observation
+
+The supplied FLM02_L/R PRGs describe the existing FLM_KANAL activation time in seconds and the LED function test has a result definition, not a documented programmable millisecond sequence. No supported fast autonomous flash pattern or safe OEM override has been established. The 0.1.8 vehicle transport samples: 20–150 ms second request rejected; 200/300/500 ms one successful pair each, after the first ECU reply. Neither stable 200 ms nor optical timing has been established.
+
+Manual parked testing now records per-request elapsed time and actual successive acknowledged START dispatch gaps. The UI and diagnostic JSON report minimum, maximum and mean host-side timings; none measure physical light timing. The existing acknowledged actuation, one-second ECU deadline, fixed inter-step gap, park/OEM-off guard and cleanup are unchanged. Choosing a sub-100 ms interval and pressing Start directs the user to the real read-only transport test in P; it never sends lamp commands automatically. Passive monitoring observes fresh BMW light status independently of vehicle speed and gear with the existing provider availability check. No background UDS requests or actuator commands; no flashing while driving. No suppression.
+
+
 
 ## 0.1.8 – Repeatable read-only transport tests and autostart evidence
 

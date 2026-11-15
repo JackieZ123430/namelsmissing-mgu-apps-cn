@@ -1,8 +1,8 @@
 {
   "id": "light_flasher",
   "title": "Light Flasher",
-  "description": "Passive startup monitor, bounded manual parked test, actual two-request TASU transport test. No OEM suppression.",
-  "version": "0.1.8",
+  "description": "Passive OEM status monitoring independent of speed, measured diagnostic timings, bounded parked lamp and read-only transport tests.",
+  "version": "0.1.9",
   "vendor": "custom",
   "loggingId": "OLF1",
   "iconGlyph": "LF",
@@ -180,6 +180,11 @@
           "Idle"
         ],
         [
+          "text3",
+          "FLASH_TIMING",
+          "No measured diagnostic timing yet"
+        ],
+        [
           "button",
           "BTN_DIAG",
           "Diagnostics - stalk / high beam"
@@ -192,7 +197,7 @@
         [
           "text3",
           "NOTICE",
-          "Private property / P for manual lamp test. Sub-100 ms settings are for the real read-only transport test; no automatic actuation or OEM suppression."
+          "Passive monitoring works independently of gear/speed. Lamp tests and fast read-only transport tests require P. No OEM suppression."
         ]
       ]
     },
