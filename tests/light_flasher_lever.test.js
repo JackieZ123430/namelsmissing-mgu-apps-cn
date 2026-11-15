@@ -103,11 +103,19 @@ test('disabled detector never fires', () => {
 test('main wires lever only through the guarded flash path', () => {
     const src = require('fs').readFileSync(require('path').join(__dirname, '../apps/light_flasher/main.js'), 'utf8');
     const allowed = src.match(/const leverAllowed=\(\)=>([^;]+);/)[1];
-    for (const term of ["settings.get('manualFlash')===true", "settings.get('leverTrigger')===true", "ui.isVisible('MAIN')", '!guard.reason()', '!flash.running', '!flash.cleanupUnconfirmed'])
+    for (const term of ["settings.get('manualFlash')===true", "settings.get('leverTrigger')===true", 'leverScreenOk()', '!guard.reason()', '!flash.running', '!flash.cleanupUnconfirmed'])
         assert.ok(allowed.includes(term), 'leverAllowed lacks ' + term);
     assert.match(src, /startFlash\('lever'\)/);
-    assert.match(src, /flash\.run\(cfg,flashAllowed,update\)/, 'lever uses the same OEM-off/P guard as the button');
+    assert.match(src, /flash\.run\(cfg,runAllowed,update\)/);
+    assert.match(src, /const runAllowed=background\?backgroundRunAllowed:flashAllowed/);
+    // Background runs keep the full P/stationary/OEM-off guard, but never with diagnostics open.
+    const bg = src.match(/const backgroundRunAllowed=\(\)=>([^;]+);/)[1];
+    for (const term of ["settings.get('manualFlash')===true", "settings.get('leverTrigger')===true", 'leverBackground()', "!ui.isVisible('DIAGNOSTICS')", '!guard.reason()', "lastCombined==='AUS'", 'Date.now()-lastLightAt<=2500'])
+        assert.ok(bg.includes(term), 'backgroundRunAllowed lacks ' + term);
+    const screen = src.match(/const leverScreenOk=\(\)=>([^;]+);/)[1];
+    assert.equal(screen, "ui.isVisible('MAIN')||(leverBackground()&&!ui.isVisible('DIAGNOSTICS'))");
     const app = require('../apps/light_flasher/app.json');
-    const s = app.settings.find((x) => x.key === 'leverTrigger');
-    assert.equal(s.default, false);
+    for (const key of ['leverTrigger', 'leverBackground', 'manualFlash'])
+        assert.equal(app.settings.find((x) => x.key === key).default, false, key + ' must default OFF');
+    assert.equal(app.mguAppStartType, 'autostart');
 });

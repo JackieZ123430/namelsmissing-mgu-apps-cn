@@ -1,4 +1,10 @@
-# Light Flasher 0.1.12
+# Light Flasher 0.1.13
+
+## 0.1.13 – Lever trigger also with the app closed (autostart)
+
+New setting "Lever trigger also with app closed (autostart, P only)", default OFF; it additionally requires manual parked flash and the lever trigger from 0.1.12. The autostart process of the app then evaluates the short lever pull even if the Light Flasher menu is closed or another screen is shown. The flash runs with the full guard: stationary, P, fresh OEM high beam OFF, FLM identity and channel-8 OFF preflight, STOP and default session, cleanup lock. Changing screens does not cancel such a run; loss of P/stationary, OEM beam ON, disabling a setting, opening the Light Flasher diagnostics page or shutdown cancels it. Not active while the diagnostics page is open. Each run writes the usual automatic JSON log with source "lever" and background=true. light-flasher-background.json now additionally contains the lever state, triggers, ignored pulses and recent events, so background behavior can be checked over SSH without opening the app.
+
+Prerequisite: the autostart process must actually be running in the vehicle; this is still unconfirmed (see 0.1.8). If the lever does nothing with the app closed, check light-flasher-background.json first (startedAt, startReason, lever.state).
 
 ## 0.1.12 – Short lever pull starts the pattern (P only)
 

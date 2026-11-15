@@ -9,7 +9,7 @@ const Monitor=require('./background-monitor');
 const Release=require('./release-status');
 const Timing=require('./timing');
 const {LeverTrigger}=require('./lever-trigger');
-const VERSION='0.1.12';
+const VERSION='0.1.13';
 mgu.run({async start(ctx){
  const {ui,settings,log}=ctx, capture=new Capture(),reader=new Reader(ctx.signals,log);
  const monitor=new Monitor(Date.now,ctx.app&&ctx.app.startReason);
@@ -21,8 +21,9 @@ mgu.run({async start(ctx){
  let flashExport='',flashExportError='',flashAttempt=0;
  // Migrate retired interval choices explicitly; preserve valid saved settings.
  if(['20','40','60','80'].includes(String(settings.get('interval'))))settings.set('interval','100');
+ const lever=new LeverTrigger(Date.now);lever.setEnabled(settings.get('leverTrigger')===true);
  const bgFile=path.join(ctx.dataDir,'light-flasher-background.json');let lastBg='',bgError='';
- const persistBackground=()=>{try{const bg=monitor.snapshot();const raw=JSON.stringify(bg);if(raw!==lastBg){fs.writeFileSync(bgFile+'.tmp',JSON.stringify({...bg,version:VERSION,pid:process.pid,writtenAt:new Date().toISOString()},null,2));fs.renameSync(bgFile+'.tmp',bgFile);lastBg=raw;}bgError='';}catch(e){bgError=String(e.message||e);}};
+ const persistBackground=()=>{try{const lv=lever.snapshot();const bg={...monitor.snapshot(),lever:{enabled:lv.enabled,background:settings.get('leverBackground')===true,state:lv.state,triggers:lv.triggers,rejected:lv.rejected,lastPulseMs:lv.lastPulseMs,events:lv.events}};const raw=JSON.stringify(bg);if(raw!==lastBg){fs.writeFileSync(bgFile+'.tmp',JSON.stringify({...bg,version:VERSION,pid:process.pid,writtenAt:new Date().toISOString()},null,2));fs.renameSync(bgFile+'.tmp',bgFile);lastBg=raw;}bgError='';}catch(e){bgError=String(e.message||e);}};
  persistBackground();
  const enabled=()=>settings.get('enabled')===true;
  const guard=new Guard(Date.now,()=>{});
@@ -30,7 +31,6 @@ mgu.run({async start(ctx){
  const marker=path.join(ctx.dataDir,'manual-flash-pending.json');
  const journal={exists:()=>fs.existsSync(marker),mark:()=>fs.writeFileSync(marker,JSON.stringify({at:new Date().toISOString()}),{flag:'wx'}),clear:()=>fs.unlinkSync(marker)};
  const flash=new ManualFlash(reader.diag,log,undefined,Date.now,journal);let lastLightAt=0,flashTask=null;
- const lever=new LeverTrigger(Date.now);lever.setEnabled(settings.get('leverTrigger')===true);
  const stop=(why)=>{generation++;capture.stop(why);};
  // Passive observation only, independent of the parked actuator guard.
  const lightProviderAvailable=()=>!!(guard.speedSub&&guard.speedSub.available);
@@ -44,7 +44,7 @@ mgu.run({async start(ctx){
      let cfgText;try{const cfg=getConfig();cfgText=cfg.label+' | '+cfg.intervalMs+' ms requested | '+cfg.durationMs/1000+' s'}catch(e){cfgText='Invalid settings: select 100 ms or above'}
      ui.text('FLASH_CONFIG',cfgText);
      ui.text('FLASH_STATUS',(flash.cleanupUnconfirmed?'LOCKED: previous cleanup not confirmed':flash.status)+' | '+(g.blockedBy||'P / stationary')+' | OEM beam '+(lastCombined||'unknown')+(lastError?' | '+lastError:''));
-     const lv=lever.snapshot();ui.text('LEVER_STATUS','Lever: '+(settings.get('leverTrigger')===true?lv.reason+' | triggers '+lv.triggers+(lv.rejected?' | ignored '+lv.rejected:''):'off (enable in settings)'));
+     const lv=lever.snapshot();ui.text('LEVER_STATUS','Lever'+(leverBackground()?' (also closed)':'')+': '+(settings.get('leverTrigger')===true?lv.reason+' | triggers '+lv.triggers+(lv.rejected?' | ignored '+lv.rejected:''):'off (enable in settings)'));
      ui.text('FLASH_RESULT',(gaps?'Actual START gap '+gaps.meanMs+' ms | ':'')+returnState+(flashExportError?' | Save error: '+flashExportError:flashExport?' | Log saved':''));
    }
    if(!ui.isVisible('DIAGNOSTICS'))return;
@@ -75,8 +75,14 @@ mgu.run({async start(ctx){
  };
  const handler=(id,fn)=>ui.onClick(id,()=>Promise.resolve().then(fn).catch(e=>{lastError=String(e.message||e);log.warn(lastError);update()}));
  const flashAllowed=()=>!closing&&settings.get('manualFlash')===true&&ui.isVisible('MAIN')&&!guard.reason()&&lastCombined==='AUS'&&Date.now()-lastLightAt<=2500;
- const leverAllowed=()=>!closing&&settings.get('manualFlash')===true&&settings.get('leverTrigger')===true&&ui.isVisible('MAIN')&&!guard.reason()&&!pending&&!capture.active&&!flash.running&&!flash.cleanupUnconfirmed;
- const feedLever=()=>{if(lever.update(lastCombined,lastLightAt,leverAllowed()))startFlash('lever').catch(e=>{lastError=String(e.message||e);log.warn(lastError);update()});};
+ // Background lever mode: same P/stationary/OEM-off guard, but no visible menu needed.
+ // Never while the diagnostics page is open (shared TASU, read-only tests).
+ const leverBackground=()=>settings.get('leverBackground')===true;
+ const leverScreenOk=()=>ui.isVisible('MAIN')||(leverBackground()&&!ui.isVisible('DIAGNOSTICS'));
+ const backgroundRunAllowed=()=>!closing&&settings.get('manualFlash')===true&&settings.get('leverTrigger')===true&&leverBackground()&&!ui.isVisible('DIAGNOSTICS')&&!guard.reason()&&lastCombined==='AUS'&&Date.now()-lastLightAt<=2500;
+ let runNeedsMain=true;
+ const leverAllowed=()=>!closing&&settings.get('manualFlash')===true&&settings.get('leverTrigger')===true&&leverScreenOk()&&!guard.reason()&&!pending&&!capture.active&&!flash.running&&!flash.cleanupUnconfirmed;
+ const feedLever=()=>{const fired=lever.update(lastCombined,lastLightAt,leverAllowed());persistBackground();if(fired)startFlash('lever').catch(e=>{lastError=String(e.message||e);log.warn(lastError);update()});};
  async function startFlash(source){
    if(pending||capture.active||flash.running){if(source==='lever')lever.runEnded();throw Error('Another operation in progress');}
    lever.runStarted();
@@ -89,9 +95,11 @@ mgu.run({async start(ctx){
    let task;
    try{
      const cfg=getConfig();attempt.requested=cfg;
-     if(!flashAllowed())throw Error('Park securely in P, enable manual flash and switch OEM high beam OFF');
+     const background=source==='lever'&&leverBackground();attempt.background=background;
+     const runAllowed=background?backgroundRunAllowed:flashAllowed;runNeedsMain=!background;
+     if(!runAllowed())throw Error('Park securely in P, enable manual flash and switch OEM high beam OFF');
      attempt.outcome='started';
-     task=flash.run(cfg,flashAllowed,update);
+     task=flash.run(cfg,runAllowed,update);
      await task;
      attempt.outcome='finished';
    }catch(e){attempt.error=String(e.message||e);lastError=attempt.error;attempt.outcome='failed or cancelled';log.warn(lastError)}
@@ -178,7 +186,7 @@ mgu.run({async start(ctx){
    return sampleFeedback(lastCombined==='EIN'?'OEM steady high beam on':'OEM high beam off');
  });
  settings.onChange(()=>{monitor.setEnabled(settings.get('backgroundMonitor')===true);lever.setEnabled(settings.get('leverTrigger')===true);persistBackground();if(!enabled())stop('Disabled');if(flash.running||settings.get('manualFlash')!==true)flash.cancel();update()});
- ui.onVisible(()=>{if(ui.isVisible('MAIN'))monitor.seeMain();else flash.cancel();persistBackground();if((capture.active||pending&&!flash.running)&&!ui.isVisible('DIAGNOSTICS'))stop('Left diagnostics');update()});
+ ui.onVisible(()=>{if(ui.isVisible('MAIN'))monitor.seeMain();else if(runNeedsMain||ui.isVisible('DIAGNOSTICS'))flash.cancel();persistBackground();if((capture.active||pending&&!flash.running)&&!ui.isVisible('DIAGNOSTICS'))stop('Left diagnostics');update()});
  if(ctx.app&&ctx.app.on)ctx.app.on('shutdown',()=>{closing=true;flash.cancel();stop('Shutdown')});
  process.on('SIGTERM',()=>{closing=true;flash.cancel();stop('Shutdown');if(flashTask){const timer=setTimeout(()=>process.exit(1),10000);flashTask.catch(()=>{}).then(()=>{clearTimeout(timer);process.exit(0)});}else process.exit(0)});
  guard.init(ctx.signals,log,v=>{lastCombined=v&&v.statusMainBeam_headlightFlasher;lastLightAt=Date.now();observeBackground();capture.status(v);feedLever()}).catch(e=>log.warn(String(e)));
