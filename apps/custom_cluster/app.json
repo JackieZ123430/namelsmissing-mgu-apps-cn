@@ -1,8 +1,8 @@
 {
   "id": "custom_cluster",
   "title": "Custom Cluster",
-  "description": "G80/6WB previews, current-session scrollable logs and guarded small-layer KOMBI probes.",
-  "version": "0.6.2",
+  "description": "G80/6WB previews, scrollable diagnostics and repeatable guarded KOMBI layer probes.",
+  "version": "0.6.3",
   "vendor": "custom",
   "loggingId": "OAQ7",
   "iconGlyph": "CC",
