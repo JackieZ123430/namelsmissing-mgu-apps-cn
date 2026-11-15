@@ -1,4 +1,10 @@
-# Light Flasher 0.1.10
+# Light Flasher 0.1.11
+
+## 0.1.11 – Compact UI and return status
+
+Only two screens remain: flash control and combined read-only diagnostics. Requested intervals below 100 ms are removed, including the old transport experiment menu; persisted retired choices are migrated to 100 ms. The diagnostic page combines connection/background information, latest timing, acknowledged STOP/default-session status, stalk recording, FLM readback and full JSON export. Raw request history and automatic versioned flash logs remain. A successful vehicle test on 0.1.10 recorded ten positive START/STOP pairs and two positive default-session replies, 512 ms mean actual START gap at the 100 ms requested setting. The user also reported normal optical operation and lights returning to normal after that test. This verifies a normal-path run only, not physical restoration under loss of communication. The new release summary distinguishes diagnostic acknowledgements from physical restoration. The existing actuator sequence, cleanup and guard remain unchanged; all active tests remain parked-only. Passive observation remains independent of gear/speed.
+
+
 
 ## 0.1.10 – Automatic unique flash attempt logs
 

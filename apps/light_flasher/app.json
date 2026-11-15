@@ -1,8 +1,8 @@
 {
   "id": "light_flasher",
   "title": "Light Flasher",
-  "description": "Passive OEM status monitoring independent of speed, measured diagnostic timings, bounded parked lamp and read-only transport tests.",
-  "version": "0.1.10",
+  "description": "Compact parked flash control and one diagnostics page, requested intervals 100–1000 ms, passive background monitor.",
+  "version": "0.1.11",
   "vendor": "custom",
   "loggingId": "OLF1",
   "iconGlyph": "LF",
@@ -71,26 +71,10 @@
     },
     {
       "key": "interval",
-      "label": "Requested step interval",
+      "label": "Requested interval (ms)",
       "type": "choice",
       "default": "100",
       "options": [
-        [
-          "20",
-          "20 ms (transport test only)"
-        ],
-        [
-          "40",
-          "40 ms (transport test only)"
-        ],
-        [
-          "60",
-          "60 ms (transport test only)"
-        ],
-        [
-          "80",
-          "80 ms (transport test only)"
-        ],
         [
           "100",
           "100 ms"
@@ -151,28 +135,18 @@
       "items": [
         [
           "text3",
-          "STATUS",
-          "Manual parked flash disabled by default."
-        ],
-        [
-          "text3",
-          "BG_STATUS",
-          "Background monitor awaiting status"
+          "FLASH_CONFIG",
+          "Saved flash settings"
         ],
         [
           "button",
           "BTN_FLASH",
-          "Start flash pattern (P, high beam OFF)"
-        ],
-        [
-          "text3",
-          "FLASH_CONFIG",
-          "Saved pattern / interval / duration"
+          "Start flash pattern (P)"
         ],
         [
           "button",
           "BTN_FLASH_STOP",
-          "Stop flash"
+          "Stop"
         ],
         [
           "text3",
@@ -181,75 +155,45 @@
         ],
         [
           "text3",
-          "FLASH_TIMING",
-          "No measured diagnostic timing yet"
-        ],
-        [
-          "text3",
-          "FLASH_EXPORT",
-          "Flash log saves automatically after each attempt"
+          "FLASH_RESULT",
+          "No result yet"
         ],
         [
           "button",
           "BTN_DIAG",
-          "Diagnostics - stalk / high beam"
-        ],
-        [
-          "button",
-          "BTN_TRANSPORT",
-          "TASU transport test (real read-only)"
+          "Diagnostics"
         ],
         [
           "text3",
           "NOTICE",
-          "Passive monitoring works independently of gear/speed. Lamp tests and fast read-only transport tests require P. No OEM suppression."
+          "Parked test only. OEM high beam OFF. Private property. Automatic JSON log."
         ]
       ]
     },
     {
       "name": "DIAGNOSTICS",
       "kind": "menu",
-      "title": "Light Flasher | diagnostics",
+      "title": "Light Flasher | Diagnostics",
       "items": [
         [
           "text3",
           "DIAG_STATE",
-          "Not recording"
+          "Connection status"
+        ],
+        [
+          "text3",
+          "DIAG_RESULT",
+          "Last flash and return status"
         ],
         [
           "button",
           "BTN_CHECK",
-          "Check BDC connection (read only)"
-        ],
-        [
-          "button",
-          "BTN_FEEDBACK",
-          "FLM02 feedback - investigate OEM control"
+          "Check BDC connection"
         ],
         [
           "button",
           "BTN_START",
-          "Start 60-second read-only test (P)"
-        ],
-        [
-          "button",
-          "BTN_NEUTRAL",
-          "Mark: neutral / released"
-        ],
-        [
-          "button",
-          "BTN_PULL",
-          "Mark: pulling flasher"
-        ],
-        [
-          "button",
-          "BTN_PUSH",
-          "Mark: pushing high beam"
-        ],
-        [
-          "button",
-          "BTN_LATCH",
-          "Mark: continuous high beam, lever released"
+          "Record stalk status (60 s)"
         ],
         [
           "button",
@@ -258,116 +202,27 @@
         ],
         [
           "button",
+          "BTN_FEEDBACK",
+          "Read FLM light status"
+        ],
+        [
+          "text3",
+          "DIAG_CAPTURE",
+          "Read-only test status"
+        ],
+        [
+          "button",
           "BTN_SAVE",
-          "Stop and save JSON log"
+          "Save full diagnostic JSON"
         ],
         [
           "scroll",
           "DIAG_LOG",
-          "Raw BDC replies and BMW light status"
+          "Recent diagnostic details"
         ],
         [
           "button",
           "BTN_BACK",
-          "Back"
-        ]
-      ]
-    },
-    {
-      "name": "FLM_FEEDBACK",
-      "kind": "menu",
-      "title": "Light Flasher | FLM feedback",
-      "items": [
-        [
-          "text3",
-          "FB_HELP",
-          "Read only. Park in P on private property, clear area in front. Set OEM high beam manually. Keep each state until sample completes."
-        ],
-        [
-          "text3",
-          "FB_STATUS",
-          "No FLM samples recorded"
-        ],
-        [
-          "button",
-          "BTN_FB_OFF",
-          "1. Read with OEM high beam OFF"
-        ],
-        [
-          "button",
-          "BTN_FB_ON",
-          "2. Read with OEM steady high beam ON"
-        ],
-        [
-          "button",
-          "BTN_FB_RELEASE",
-          "3. Read after switching high beam OFF"
-        ],
-        [
-          "button",
-          "BTN_FB_SAVE",
-          "Save diagnostic JSON"
-        ],
-        [
-          "scroll",
-          "FB_LOG",
-          "Raw feedback"
-        ],
-        [
-          "button",
-          "BTN_FB_BACK",
-          "Back to diagnostics"
-        ]
-      ]
-    },
-    {
-      "name": "TRANSPORT",
-      "kind": "menu",
-      "title": "Light Flasher | TASU transport",
-      "items": [
-        [
-          "text3",
-          "TP_HELP",
-          "Two real read-only FLM identity requests per test. No lamp commands. Change interval here; no need to return to Settings."
-        ],
-        [
-          "text3",
-          "TP_STATUS",
-          "Not tested"
-        ],
-        [
-          "button",
-          "BTN_TP_NEXT",
-          "Next test interval"
-        ],
-        [
-          "button",
-          "BTN_TP_START",
-          "Run two-request test"
-        ],
-        [
-          "button",
-          "BTN_TP_SWEEP",
-          "Run interval series 20-500 ms"
-        ],
-        [
-          "button",
-          "BTN_TP_CANCEL",
-          "Cancel series"
-        ],
-        [
-          "button",
-          "BTN_TP_SAVE",
-          "Save diagnostic JSON"
-        ],
-        [
-          "scroll",
-          "TP_LOG",
-          "Newest test first"
-        ],
-        [
-          "button",
-          "BTN_TP_BACK",
           "Back"
         ]
       ]

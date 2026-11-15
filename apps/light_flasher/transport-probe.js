@@ -1,7 +1,7 @@
 'use strict';
 // Two read-only identity requests, different ECUs, no session or actuator operations.
 // Send the second without waiting for the first method result or ECU response.
-const allowedIntervals=[20,40,60,80,100,150,200,300,500,1000];
+const allowedIntervals=[100,150,200,300,500,1000];
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const hex=b=>Array.from(b||[]).map(n=>n.toString(16).padStart(2,'0').toUpperCase()).join(' ');
 async function probe(diag,interval,allowed,now=Date.now,delay=sleep){

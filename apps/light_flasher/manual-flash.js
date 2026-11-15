@@ -14,7 +14,6 @@ class ManualFlash {
   if(this.cleanupUnconfirmed||(this.journal&&this.journal.exists()))throw Error('Previous cleanup unconfirmed: verify normal lights; locked pending service inspection');
   if(!allowed()||!this.diag.available)throw Error('Enable parked flash, select P and switch OEM high beam OFF');
   const cfg=config(requested.pattern,requested.intervalMs,requested.durationMs);
-  if(cfg.previewOnly)throw Error('20-80 ms is reserved for the real read-only transport test; select at least 100 ms for lamp testing');
   this.config=cfg;this.stepsCompleted=0;this.elapsedMs=0;
   this.running=true;this.cancelled=false;this.trace=[];this.status='Checking FLM identities and high beam OFF';changed();
   let began=null,deadline=Infinity,marked=false,error=null;
