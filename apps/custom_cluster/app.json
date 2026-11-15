@@ -1,8 +1,8 @@
 {
   "id": "custom_cluster",
   "title": "Custom Cluster",
-  "description": "Six selectable parked side-layout prototypes, G21-inspired colour recreation and live diagnostics.",
-  "version": "0.6.5",
+  "description": "KOMBI-only selected-layout parked tests and reliable text diagnostics.",
+  "version": "0.6.6",
   "vendor": "custom",
   "loggingId": "OAQ7",
   "iconGlyph": "CC",
@@ -27,7 +27,7 @@
       "buttons": [
         [
           "BTN_TEST",
-          "Preview / parked test"
+          "Test KOMBI"
         ],
         [
           "BTN_DIAG",
@@ -110,54 +110,6 @@
       "label": "Allow experimental KOMBI tests",
       "type": "bool",
       "default": false
-    },
-    {
-      "key": "panelTestMode",
-      "label": "Test content",
-      "type": "choice",
-      "default": "preview",
-      "options": [
-        [
-          "preview",
-          "Static iDrive preview (no KOMBI)"
-        ],
-        [
-          "selected_layout",
-          "Selected layout (parked prototype)"
-        ],
-        [
-          "probe",
-          "One diagnostic marker"
-        ],
-        [
-          "design",
-          "Three diagnostic markers"
-        ],
-        [
-          "sixwb_dials",
-          "6WB dial test (legacy)"
-        ]
-      ]
-    },
-    {
-      "key": "panelTarget",
-      "label": "Panel target / slot",
-      "type": "choice",
-      "default": "panel",
-      "options": [
-        [
-          "panel",
-          "Standard panel (0x203)"
-        ],
-        [
-          "panel201",
-          "Experimental 0x201 (requires renderer support)"
-        ],
-        [
-          "panel202",
-          "Experimental 0x202 (requires renderer support)"
-        ]
-      ]
     },
     {
       "key": "sixwbTheme",
@@ -410,22 +362,6 @@
       "label": "Phone status badge (map/panel)",
       "type": "bool",
       "default": false
-    },
-    {
-      "key": "demo",
-      "label": "Preview data (HMI only)",
-      "type": "choice",
-      "default": "off",
-      "options": [
-        [
-          "off",
-          "Live values only"
-        ],
-        [
-          "on",
-          "Preview on centre display"
-        ]
-      ]
     }
   ]
 }
