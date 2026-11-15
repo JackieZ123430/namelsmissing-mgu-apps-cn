@@ -1,4 +1,11 @@
-# Light Flasher 0.1.11
+# Light Flasher 0.1.12
+
+## 0.1.12 – Short lever pull starts the pattern (P only)
+
+New setting "Start pattern by short lever flash (P only)", default OFF; it also requires "Enable manual parked flash". With the vehicle stationary in P and the Light Flasher main screen open, a short OEM flash pull on the lever starts ONE run of the saved pattern through exactly the same guarded path as the Start button (FLM identity and D6DB channel-8 OFF preflight, P/stationary/OEM-off guard during the run, STOP and default session on every side, cleanup lock).
+
+Detection uses only the already subscribed combined signal statusMainBeam_headlightFlasher, which cannot distinguish a flash pull from switching high beam on. A pulse therefore counts only if OEM beam was OFF for at least 1 s, the ON phase lasted at most 1.5 s, and OFF then persists for 0.4 s; the run starts after release, never while the OEM beam is on. Longer ON (steady high beam), a second pull before settling, stale or unknown status, guard loss, leaving the main screen, another operation or a cleanup lock reset the detector. After any run (lever or button) a 5 s cooldown applies. A very short tap of the high-beam push may also count; the effect is the same parked one-shot run. Not active while driving, in the background or with the menu closed; the passive background monitor is unchanged and still sends nothing. The main screen shows the lever state; the diagnostic JSON and every automatic run log include the detector state, the triggering source (button/lever) and the measured pulse length. The thresholds are not yet verified in the vehicle: please record whether short pulls are recognised and whether steady high beam is reliably ignored.
+
 
 ## 0.1.11 – Compact UI and return status
 
