@@ -1,8 +1,8 @@
 {
   "id": "custom_cluster",
   "title": "Custom Cluster",
-  "description": "6WB parked dial prototype, G80/6WB previews, diagnostics and guarded layer tests.",
-  "version": "0.6.4",
+  "description": "Six selectable parked side-layout prototypes, G21-inspired colour recreation and live diagnostics.",
+  "version": "0.6.5",
   "vendor": "custom",
   "loggingId": "OAQ7",
   "iconGlyph": "CC",
@@ -61,15 +61,15 @@
         ],
         [
           "sixwb",
-          "BMW 6WB digital (parked test)"
+          "BMW 6WB digital"
         ],
         [
           "oem",
-          "G21 OEM-style recolor (parked test)"
+          "G21 OEM-style recreation"
         ],
         [
           "g80",
-          "G80 full cluster (parked test)"
+          "G80-inspired design"
         ],
         [
           "sport",
@@ -122,6 +122,10 @@
           "Static iDrive preview (no KOMBI)"
         ],
         [
+          "selected_layout",
+          "Selected layout (parked prototype)"
+        ],
+        [
           "probe",
           "One diagnostic marker"
         ],
@@ -131,7 +135,7 @@
         ],
         [
           "sixwb_dials",
-          "6WB round dials (parked prototype)"
+          "6WB dial test (legacy)"
         ]
       ]
     },
