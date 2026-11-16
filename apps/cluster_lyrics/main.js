@@ -20,6 +20,7 @@ const { Spotify, IMPORT_NAME } = require('./spotify.js');
 const { Lyrics } = require('./lrclib.js');
 const { KombiLyrics, COLORS } = require('./kombi.js');
 const { LyricsEngine } = require('./engine.js');
+const { BackgroundStatus } = require('./background_status.js');
 
 const PAGES = ['NOW', 'SETUP', 'LOG'];
 const LYRICS_TEXT = { idle: 'waiting for a song', loading: 'loading...', synced: 'synchronised (LRCLIB)',
@@ -50,6 +51,9 @@ mgu.run({
         const kombi = new KombiLyrics(log, { trace: (m) => note('KOMBI ' + m) });
         const engine = new LyricsEngine({ spotify, lyrics, kombi, log });
         const car = new Car(ctx, ['speed'], { pollMs: 5000 });
+        // Autostart: the process (and with it the KOMBI lyrics) runs without the app window.
+        const background = new BackgroundStatus({ dir: ctx.dataDir, file: 'cluster-lyrics-background.json',
+            version: (ctx.spec && ctx.spec.version) || '', startReason: ctx.app && ctx.app.startReason });
 
         let page = spotify.signedIn() ? 'NOW' : 'SETUP', notice = '', signOutArmedUntil = 0;
         let lastState = '', lastDrawAt = 0;
@@ -80,7 +84,7 @@ mgu.run({
         }
 
         ui.onVisible((name, visible) => {
-            if (name === 'MAIN' && visible) showPage(spotify.signedIn() ? 'NOW' : 'SETUP');
+            if (name === 'MAIN' && visible) { background.seen(); showPage(spotify.signedIn() ? 'NOW' : 'SETUP'); }
         });
         ui.onClick('BTN_KOMBI', () => {
             const on = !settings.get('kombiOn');
@@ -122,6 +126,10 @@ mgu.run({
                 const state = (engine.track ? engine.track.title : '-') + ' | lyrics=' + engine.lyricsState +
                     ' | kombi=' + (engine.kombiReason || 'allowed') + (engine.pollError ? ' | error=' + engine.pollError : '');
                 if (state !== lastState) { lastState = state; note(state); }
+                background.update({ kombiOn: !!settings.get('kombiOn'), kombiMode: settings.get('kombiMode'),
+                    signedIn: spotify.signedIn(), track: engine.track ? engine.track.title : null,
+                    lyrics: engine.lyricsState, kombi: engine.kombiReason || 'allowed',
+                    pollError: engine.pollError || '', demoSpeed: !!d.demo });
                 if (signOutArmedUntil && Date.now() >= signOutArmedUntil) { signOutArmedUntil = 0; updateButtons(); }
             } catch (e) { log.warn('lyrics tick: ' + (e && e.message || e)); }
         }, 250);

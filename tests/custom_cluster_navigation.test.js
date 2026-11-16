@@ -23,7 +23,7 @@ for (const screen of spec.screens) {
 const clicks = new Map(), pages = [], loops = [], events = [];
 const labels = new Map(), renders = new Map(), drawn = [];
 const phoneStates = [];
-let phoneTicks = 0;
+let phoneTicks = 0, backgroundSeen = 0;
 let reportCount = 0, cleared = 0, clearedMemory = 0, savedTxt = 0, restored = 0, pollRequested = null, lastOptions, armCalls = 0;
 const ui = {
     onClick: (name, fn) => clicks.set(name, fn),
@@ -47,7 +47,7 @@ const ctx = {
     theme: () => ({ bg: '#000', text: '#fff', dim: '#bbb', warn: '#e80' }),
 };
 const cluster = {
-    settings(o) { lastOptions = o; }, sample() {}, observeVehicle() {}, apply() {}, pollStatus() {}, phone(state) { phoneStates.push(state); }, close() {},
+    settings(o) { lastOptions = o; }, sample() {}, observeVehicle() {}, apply() {}, pollStatus() {}, autoTick() {}, phone(state) { phoneStates.push(state); }, close() {},
     clearHistory() { clearedMemory++; },
     restoreOriginal() { restored++; return 'release requested'; },
     setTraceSink() {},
@@ -80,6 +80,7 @@ const deps = {
     './kit/gauges': { frame() {} },
     './cluster_layers.js': { ClusterLayers: FakeCluster },
     './phone_bridge.js': { PhoneBridge: FakePhone },
+    './background_status.js': { BackgroundStatus: class { seen() { backgroundSeen++; } update() {} } },
     './waze_control.js': { WazeControl: FakeWaze },
     './g80_preview.js': { drawG80Preview() {} },
     './sixwb_preview.js': { draw6WBPreview() {} },
@@ -190,6 +191,7 @@ async function test() {
     events[0]('MAIN', false);
     events[0]('MAIN', true); // Home/Settings/app tile returns to MAIN
     assert.strictEqual(labels.get('BTN_DIAG'), 'Diagnostics', 'fresh MAIN visibility must clear stale diagnostic view');
+    assert.ok(backgroundSeen >= 1, 'first menu opening is recorded for the autostart status file');
     assert.deepStrictEqual(pages, [], 'navigation must not call unreliable RHMI openState');
     assert.ok(events.length, 'HMI visibility should be logged');
     console.log('custom-cluster in-page HMI navigation and QR lifecycle tests passed');
