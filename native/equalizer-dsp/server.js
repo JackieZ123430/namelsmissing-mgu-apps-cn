@@ -3,12 +3,14 @@ const fs = require('fs');
 const path = require('path');
 const net = require('net');
 const Core = require('./core');
-const VERSION = '0.2.0';
+const Snapshot = require('./snapshot');
+const VERSION = '0.2.1';
 function mkdir(dir) { if (!fs.existsSync(dir)) fs.mkdirSync(dir, 0o770); }
 class Service {
     constructor(opts) {
         this.runtime = opts.runtime; this.stateFile = opts.stateFile; this.sockets = new Set(); this.streams = new Set();
         this.config = Core.defaults(); this.revision = 0; this.configError = ''; this.saved = false; this.closedFrames = 0;
+        this.snapshot = { file: path.join(this.runtime, Snapshot.FILE_NAME), layout: Snapshot.LAYOUT, revision: null, error: '' };
         for (const f of [this.stateFile, this.stateFile + '.bak']) {
             try {
                 const s = JSON.parse(fs.readFileSync(f, 'utf8'));
@@ -22,7 +24,14 @@ class Service {
         return { version: VERSION, revision: this.revision, config: Core.clone(this.config), saved: this.saved, configError: this.configError,
             streams, frames: this.closedFrames + streams.reduce((sum, s) => sum + s.frames, 0),
             routing: 'explicit-pcm-clients', stockCarPlayRouted: false, stockRadioRouted: false,
-            effectivePreampDb: Core.headroom(this.config), formats: ['s16le'], sampleRates: [44100, 48000, 88200, 96000] };
+            effectivePreampDb: Core.headroom(this.config), formats: ['s16le'], sampleRates: [44100, 48000, 88200, 96000],
+            nativeSnapshot: Object.assign({}, this.snapshot) };
+    }
+    // Publish the active configuration for native consumers. Never fatal: the
+    // socket clients keep working if /run is unavailable.
+    publishSnapshot() {
+        try { mkdir(this.runtime); Snapshot.write(this.runtime, this.config, this.revision); this.snapshot.revision = this.revision; this.snapshot.error = ''; }
+        catch (e) { this.snapshot.error = String(e.message || e); }
     }
     set(config, expected) {
         if (!Number.isSafeInteger(expected) || expected !== this.revision) throw new Error('DSP settings changed; refresh first');
@@ -36,7 +45,8 @@ class Service {
         fs.renameSync(this.stateFile + '.tmp', this.stateFile);
         // Validation and persistence complete before the live filter banks change.
         for (const s of this.streams) s.processor.configure(next);
-        this.config = next; this.revision = revision; this.saved = true; this.configError = ''; return this.status();
+        this.config = next; this.revision = revision; this.saved = true; this.configError = '';
+        this.publishSnapshot(); return this.status();
     }
     track(socket) {
         this.sockets.add(socket); socket.on('error', () => {}); socket.on('close', () => this.sockets.delete(socket));
@@ -99,7 +109,7 @@ class Service {
         });
     }
     async start() {
-        mkdir(this.runtime);
+        mkdir(this.runtime); this.publishSnapshot();
         this.controlServer = net.createServer((s) => this.control(s)); this.pcmServer = net.createServer((s) => this.pcm(s));
         const listen = (server, name) => new Promise((resolve, reject) => {
             server.once('error', reject); server.listen(path.join(this.runtime, name), () => {

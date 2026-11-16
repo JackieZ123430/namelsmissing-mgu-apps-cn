@@ -1,4 +1,4 @@
-# Equalizer PCM DSP 0.2.0
+# Equalizer PCM DSP 0.2.1
 
 Gemeinsamer Hintergrunddienst für tatsächlich angeschlossene PCM-Audioquellen. Sieben parametrische Peaking-Filter verarbeiten die Audiosamples vor deren Ausgabe. Die Standardeinstellung ist Bypass.
 
@@ -22,6 +22,12 @@ Der MGU Store installiert dieses Tool als Abhängigkeit von Equalizer und Video 
 | `control.sock` | Eine JSON-Zeile, `op: status` oder `op: set` mit vollständigem `config` und `expectedRevision`; Antwort `{ok,data}` bzw. `{ok:false,error}` |
 | `pcm.sock` | JSON-Zeile `{protocol:1,format:"s16le",sampleRate:44100,channels:2,source:"app-name"}`; JSON-Bestätigung; danach je Block 4 Byte LE-Länge und PCM-Daten; Antwort im selben Blockformat |
 
+### Nativer Snapshot (neu in 0.2.1)
+
+Zusätzlich schreibt der Dienst beim Start und nach jedem erfolgreichen `set` die aktive Konfiguration als `carplay.snapshot` in dasselbe Laufzeitverzeichnis. Das Format ist ein festes, versioniertes Binärlayout (204 Byte, Little Endian, Magic `MGEQSNP1`, Layout 1, CRC-32) und in `snapshot.js` beschrieben. Geschrieben wird atomar (temporäre Datei, `fsync`, `rename`), Modus `0640`. Ein Schreibfehler ist nicht fatal; er erscheint im Status unter `nativeSnapshot.error`, die Socket-Clients arbeiten unverändert weiter.
+
+Die Datei ist die Schnittstelle zum **Offline-Prototyp** der CarPlay-Live-Filterung (`experiments/carplay_alsa`). Kein installierter Prozess liest sie bisher; `stockCarPlayRouted` bleibt `false`.
+
 Der Client in `kit/runtime/dsp-client.js` stellt `request()` und den Stream-Transform `PcmFilter` bereit. Er überträgt pro Quelle einen ausstehenden Block. Bei fehlendem Dienst, einer unterbrochenen Verbindung oder Zeitüberschreitung gibt er den noch nicht ausgegebenen Originalblock genau einmal aus und wechselt für diesen Stream auf unveränderte Weiterleitung. Ein neuer Wiedergabestart versucht erneut die DSP-Verbindung.
 
 Video Hub 0.1.1 ist konkret angebunden: `ffmpeg → PcmFilter → aplay`. Sein Menü **Audio EQ** kann den DSP während der Wiedergabe bedienen. Das Beenden der App, ein Fokusverlust und die vorhandenen Fahrzeugbewegungsregeln stoppen die Wiedergabe weiterhin.
@@ -44,6 +50,7 @@ Die Ausgabe enthält Audio-Gerätenamen, relevante Prozessnamen, ALSA-Konfigurat
 
 ```sh
 node tests/equalizer_dsp.test.js
+node tests/equalizer_snapshot.test.js
 node tests/equalizer_video_pipe.test.js
 node tests/equalizer_node8_smoke.js
 ```

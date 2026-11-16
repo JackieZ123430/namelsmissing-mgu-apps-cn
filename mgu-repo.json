@@ -129,7 +129,7 @@
       "requires": {
         "idrive7-renderd": "2.1.6",
         "mgu-inputgate": "1.0.0",
-        "mgu-equalizer-dsp": "0.2.0",
+        "mgu-equalizer-dsp": "0.2.1",
         "mgu-video-net": "0.1.0"
       },
       "build": {
@@ -275,7 +275,7 @@
       "requires": {
         "idrive7-renderd": "2.1.6",
         "mgu-inputgate": "1.0.0",
-        "mgu-equalizer-dsp": "0.2.0"
+        "mgu-equalizer-dsp": "0.2.1"
       },
       "build": {
         "python": "tools/build_store_app.py",
@@ -290,7 +290,7 @@
       "id": "mgu-equalizer-dsp",
       "kind": "tool",
       "title": "Equalizer PCM DSP",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "path": "native/equalizer-dsp",
       "mguHmi": [
         "ID7"
@@ -309,7 +309,7 @@
       "requires": {
         "idrive7-renderd": "2.1.6",
         "mgu-inputgate": "1.0.0",
-        "mgu-equalizer-dsp": "0.2.0"
+        "mgu-equalizer-dsp": "0.2.1"
       },
       "build": {
         "python": "tools/build_store_app.py",

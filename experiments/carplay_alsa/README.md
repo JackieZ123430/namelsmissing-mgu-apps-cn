@@ -38,8 +38,9 @@ sample format. Before any vehicle test:
 1. Confirm the actual CarPlay stereo format and write mode at runtime.
 2. Determine a reversible, per-process insertion mechanism that cannot touch
    telephony, alerts, BMW audio or other SmartX streams.
-3. Implement configuration transfer from the existing DSP service without
-   blocking an audio callback; test thread safety, frame ordering and underruns.
+3. ~~Implement configuration transfer from the existing DSP service without
+   blocking an audio callback.~~ Done offline as the snapshot bridge, see
+   [CARPLAY_LIVE_DSP.md](CARPLAY_LIVE_DSP.md); MGU timing still unmeasured.
 4. Validate with dummy ALSA and stress/latency tests before parking-lot testing.
 5. Keep playback fail-open and disabled by default, with a documented rollback.
 

@@ -29,6 +29,7 @@ jobs:
         with:
           node-version: '22'
       - run: node tests/equalizer_dsp.test.js
+      - run: node tests/equalizer_snapshot.test.js
       - run: node tests/equalizer_music.test.js
       - run: node tests/equalizer_music_export.test.js
       - run: node kit/tools/test_equalizer.js
@@ -42,4 +43,5 @@ jobs:
         with:
           node-version: '8.17.0'
       - run: node tests/equalizer_node8_smoke.js
+      - run: node tests/equalizer_snapshot.test.js
       - run: node tests/equalizer_music.test.js
