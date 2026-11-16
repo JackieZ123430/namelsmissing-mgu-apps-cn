@@ -13,6 +13,7 @@ const { WazeControl } = require('./waze_control.js');
 const { resolveColor, resolve6WBColor, colorHex } = require('./cluster_colors.js');
 const QR = require('./cluster_diagnostics.js');
 const { LiveLog } = require('./live_log.js');
+const { BackgroundStatus } = require('./background_status.js');
 
 function ageText(age) { return age == null ? 'no sample' : age + 's old'; }
 function testSummary(st) {
@@ -63,6 +64,8 @@ mgu.run({
         const bridge = new PhoneBridge(ctx.dataDir, log, () => {
             cluster.phone(bridge.reported());
         });
+        const background = new BackgroundStatus({ dir: ctx.dataDir, file: 'custom-cluster-background.json',
+            version: (ctx.spec && ctx.spec.version) || '', startReason: ctx.app && ctx.app.startReason });
         let qrReport = null, qrPage = 0, qrMatrix = null, qrError = '', qrNotice = '';
         let phoneLink = 'on', phoneQr = null, phoneQrFor = '';
         let clearArmedUntil = 0;
@@ -128,6 +131,7 @@ mgu.run({
         }
         ui.onVisible((name, visible) => {
             uiEvent(name + (visible ? ' visible' : ' hidden'));
+            if (name === 'MAIN' && visible) background.seen();
             // A fresh entry from the app tile, Home, or Settings must always
             // show the preview. All secondary views now live inside MAIN;
             // there are no hidden RHMI states that can steal focus.
@@ -142,6 +146,7 @@ mgu.run({
                 colorBrightness: settings.get('colorBrightness'), cycleSeconds: settings.get('cycleSeconds'),
                 phoneBadge: !!settings.get('phoneBadge'), wazeMap: settings.get('wazeMap'),
                 enablePanelTests: !!settings.get('enablePanelTests'),
+                kombiAuto: settings.get('kombiAuto') === 'parked' ? 'parked' : 'off',
                 coverOriginal: settings.get('coverOriginal') !== false,
                 panelTestMode: 'selected_layout', panelTarget: 'panel' });
             bridge.setEnabled(!!settings.get('phoneBridge'));
@@ -298,9 +303,16 @@ mgu.run({
             cluster.observeVehicle(car.data());
             bridge.tick();
             cluster.phone(bridge.reported());
+            cluster.autoTick();
             cluster.apply();
             cluster.pollStatus(false);
             const now = Date.now();
+            const bs = cluster.status();
+            background.update({ layout: bs.layout, kombiAuto: bs.autoMode, kombiAutoState: bs.autoReason,
+                kombiShown: bs.panelActive, selector: bs.gearPosition, speedKmh: bs.speedKmh,
+                phoneBridge: !!settings.get('phoneBridge'), phoneLinkListening: bridge.listening(),
+                phoneStatusLine: !!settings.get('phoneBadge'), phoneReported: bridge.reported(),
+                rendererReady: bs.ready });
             if (now - lastJournalStateAt >= 15000) {
                 lastJournalStateAt = now;
                 const st = cluster.status();
@@ -477,19 +489,21 @@ mgu.run({
                 cv.text('Instrument colour: '+color,48,211,23,t.text);
                 cv.text('Test KOMBI sends this layout to the instrument display only.',48,264,21,t.text);
                 cv.text('Waze: '+waze.status,48,309,21,t.dim);
-                cv.text('Test status: '+(st.panelActive?'REQUESTED / '+st.secondsLeft+'s remaining':testNotice).slice(0,103),
+                cv.text('Test status: '+(st.panelActive?(st.autoRun?'AUTOMATIC / only while parked in P':'REQUESTED / '+st.secondsLeft+'s remaining'):testNotice).slice(0,103),
                     48,366,21,st.panelActive?'#2fd27a':t.text);
                 cv.text('Last renderer result: '+String(st.disarmReason||'-').slice(0,90),48,406,19,t.dim);
+                if(st.autoMode==='parked')cv.text('Automatic KOMBI (no menu needed): '+String(st.autoReason||'-').slice(0,70),48,444,19,
+                    st.autoRun&&st.panelActive?'#2fd27a':t.dim);
                 cv.text('Renderer: '+(st.ready?'Connected':'Offline'),1100,110,24,st.ready?'#2fd27a':t.warn);
                 cv.text('Selector: '+(st.gearPosition||'?'),1100,157,23,t.text);
                 cv.text('Live speed/RPM: '+(st.live?'YES':'NO'),1100,201,21,t.text);
                 cv.text('Sample age: '+ageText(st.sampleAgeSeconds),1100,240,20,t.dim);
                 cv.text('KOMBI safe: '+(st.parked?'YES':'NO'),1100,280,22,st.parked?'#2fd27a':t.warn);
                 cv.text('Slot: '+String(st.panelTargetState||'-').slice(0,25),1100,324,19,t.dim);
-                cv.text(st.panelActive?'Test active':'No active custom panel',1100,365,19,t.text);
+                cv.text(st.panelActive?(st.autoRun?'KOMBI shown (automatic)':'Test active'):'No active custom panel',1100,365,19,t.text);
                 if(settings.get('phoneBridge'))cv.text('Phone app: '+phoneText(),1100,405,19,
                     bridge.reported()==='opened'?'#2fd27a':bridge.reported()==='closed'?'#e0453a':t.dim);
-                cv.text('Stationary tests only. Original BMW indicators must remain available.',48,482,19,t.warn);
+                cv.text('Stationary only. Original BMW indicators must remain available.',48,482,19,t.warn);
                 await ui.image('MAIN_GFX',cv);
                 lastUiError='';
             } catch(e){

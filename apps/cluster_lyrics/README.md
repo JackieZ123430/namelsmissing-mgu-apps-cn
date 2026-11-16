@@ -1,4 +1,4 @@
-# Cluster Lyrics 0.1.0 — BMW G21 / MGU iDrive 7
+# Cluster Lyrics 0.1.1 — BMW G21 / MGU iDrive 7
 
 Shows the synchronised lyrics of the song that is playing on **your own Spotify account**:
 
@@ -7,6 +7,23 @@ Shows the synchronised lyrics of the song that is playing on **your own Spotify 
 
 **Status: built and tested on a PC only.** Nothing in this app has run on a vehicle yet. See
 [What is verified](#what-is-verified) before you rely on any part of it.
+
+## Starts with the car, works without the app window (0.1.1)
+
+The app now carries `mguAppStartType: autostart`: the MGU Store starts its process with the head unit, so the lyrics can appear in the cluster without opening the app. What happens is decided only by the settings; with the defaults nothing is shown and the app does not even connect to the cluster renderer.
+
+| You want | Settings |
+| --- | --- |
+| Lyrics in the cluster, menu never opened | **Show lyrics in the instrument cluster** on (needs the Spotify sign-in once, see Setup) |
+| only when standing still | **When lyrics may be shown**: at a standstill (default) |
+| also while driving | **When lyrics may be shown**: always |
+| nothing in the cluster | **Show lyrics in the instrument cluster** off |
+
+Spotify polling, lyrics download and the cluster layers run in the background process (a timer, not the screen's draw loop). With the cluster switch off, the app does not poll Spotify unless its window is open.
+
+**Check it over SSH:** `cluster-lyrics-background.json` in the app data directory (`startReason`, `startedAt`, `windowOpenedYet`, current track, lyrics state, why the cluster is or is not shown). If `windowOpenedYet` is `false` and the file keeps updating, the process really runs without the window.
+
+**Not verified on a vehicle:** that the autostart process runs at all on this head unit (the same open question exists for Light Flasher), and everything listed under "What is verified".
 
 ## How it works
 

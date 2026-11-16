@@ -95,6 +95,12 @@ class ClusterLayers {
             colorMode: 'palette', colorBrightness: 100,
             panelTestMode: 'probe', panelTarget: 'panel', coverOriginal: true };
         this.phoneState = 'unknown';
+        // Automatic KOMBI display (setting kombiAuto): only while parked, never after a failure.
+        this.autoRun = false;
+        this.autoSuppressed = false;
+        this.parkedSince = 0;
+        this.lastAutoTry = 0;
+        this.autoReason = 'off';
         this.lastSent = 0;
         this.armedUntil = 0;
         this.disarmReason = 'Off by default';
@@ -261,7 +267,7 @@ class ClusterLayers {
         }
         if (previous.layout !== options.layout || previous.panelTarget !== options.panelTarget ||
             previous.panelTestMode !== options.panelTestMode ||
-            options.enablePanelTests === false ||
+            (options.enablePanelTests === false && !this.autoRun) ||
             (['sixwb_dials','selected_layout'].indexOf(this.activeTestMode) >= 0 &&
                 (previous.sixwbTheme !== options.sixwbTheme ||
                  previous.sixwbColorSource !== options.sixwbColorSource ||
@@ -274,6 +280,8 @@ class ClusterLayers {
                  previous.cycleSeconds !== options.cycleSeconds ||
                  previous.coverOriginal !== options.coverOriginal)))
             this.disarm('Panel settings changed');
+        // A changed setting is a new decision: an automatic display may try again.
+        this.autoSuppressed = false;
         this.apply();
     }
     sample(d) {
@@ -364,14 +372,14 @@ class ClusterLayers {
         const target = this.options.panelTarget;
         return PANEL_TARGETS[target] ? target : 'panel';
     }
-    armPanel() {
+    armPanel(auto) {
         if (this.armedUntil) { this.tracePanel('test ended: Stopped by user'); this.restoreOriginal(); return false; }
         if (!(MODES[this.options.layout] > 0)) {
             this.disarmReason = 'Choose a custom instrument design first';
             this.tracePanel('test refused: ' + this.disarmReason);
             return false;
         }
-        if (this.options.enablePanelTests === false || this.options.panelTestMode === 'preview') {
+        if ((this.options.enablePanelTests === false && !auto) || this.options.panelTestMode === 'preview') {
             this.disarmReason = 'Experimental KOMBI test not enabled';
             return false;
         }
@@ -425,10 +433,60 @@ class ClusterLayers {
         this.armedUntil = Date.now() + PANEL_TEST_MS;
         this.tracePanel('test armed: ' + this.options.layout + '/' + this.activeTestMode +
             ' target=' + target + ' speed=' + this.data.speed + ' rpm=' + this.data.rpm);
-        this.disarmReason = this.activeTestMode + ' test: 12 seconds maximum';
+        this.disarmReason = auto ? 'automatic KOMBI display: only while parked in P' :
+            this.activeTestMode + ' test: 12 seconds maximum';
         this.apply();
         this.pollStatus(true);
         return !!this.panelRef && !!this.armedUntil;
+    }
+    /**
+     * Called every 250 ms, with or without the app window. With kombiAuto the selected
+     * layout is requested by itself once the car has been parked (P, standing, fresh
+     * speed + RPM) for 3 s, and kept (the 12 s test window is renewed) while that holds.
+     * Leaving P / moving releases it through the normal path. Any other end (renderer
+     * refusal, release, button) pauses the automatic display until the next time parked,
+     * so a failure can never turn into a request loop.
+     */
+    autoTick() {
+        const now = Date.now();
+        const wanted = this.options.kombiAuto === 'parked' && MODES[this.options.layout] > 0;
+        if (!wanted) {
+            if (this.autoRun && this.armedUntil) this.disarm('Automatic KOMBI switched off');
+            this.autoRun = false; this.parkedSince = 0; this.autoSuppressed = false;
+            this.autoReason = this.options.kombiAuto === 'parked' ? 'layout is BMW original' : 'off';
+            return;
+        }
+        if (!this.ready) { this.autoReason = 'renderer not connected'; return; }
+        if (!this.parked()) {
+            this.parkedSince = 0; this.autoSuppressed = false;
+            if (!this.armedUntil) this.autoRun = false;
+            this.autoReason = 'waiting: ' + this.testGuard();
+            return;
+        }
+        if (!this.parkedSince) this.parkedSince = now;
+        if (this.armedUntil) {
+            if (this.autoRun) { this.armedUntil = now + PANEL_TEST_MS; this.autoReason = 'showing (parked)'; }
+            else this.autoReason = 'manual test running';
+            return;
+        }
+        if (this.autoRun) { // it ended without leaving P: stop trying until the next parking
+            this.autoRun = false; this.autoSuppressed = true;
+            this.tracePanel('automatic KOMBI paused until next parking: ' + (this.disarmReason || 'ended'));
+        }
+        if (this.autoSuppressed) { this.autoReason = 'paused until next parking'; return; }
+        if (now - this.parkedSince < 3000) { this.autoReason = 'parked, starting in ' + Math.ceil((3000 - (now - this.parkedSince)) / 1000) + ' s'; return; }
+        if (this.recoveryRequestedAt && (!this.releaseConfirmed || !this.recoveryStatusAt ||
+            now - this.recoveryStatusAt > 10000)) {
+            this.autoReason = 'waiting for BMW release confirmation';
+            this.pollStatus(false);
+            return;
+        }
+        if (now - this.lastAutoTry < 2000) return;
+        this.lastAutoTry = now;
+        this.autoRun = this.armPanel(true);
+        if (this.autoRun) { this.autoReason = 'requested'; return; }
+        this.autoSuppressed = true;
+        this.autoReason = 'refused: ' + String(this.disarmReason || '-').slice(0, 60) + ' (paused until next parking)';
     }
     disarm(reason) {
         const hadPanel = !!this.panelRef;
@@ -591,6 +649,7 @@ class ClusterLayers {
             recoveryState: this.recoveryState, recoveryRequestedAt: this.recoveryRequestedAt,
             recoveryTarget: this.recoveryTarget, releaseConfirmed: this.releaseConfirmed,
             suspended: this.suspended,
+            autoMode: this.options.kombiAuto === 'parked' ? 'parked' : 'off', autoRun: this.autoRun, autoReason: this.autoReason,
             testGuard: this.testGuard(),
             secondsLeft: this.panelRef ? Math.max(0, Math.ceil((this.armedUntil - Date.now()) / 1000)) : 0,
             color: colorHex(this.options.layout === 'sixwb' ? resolve6WBColor(this.options, Date.now())

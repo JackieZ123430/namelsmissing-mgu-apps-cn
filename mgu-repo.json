@@ -185,7 +185,7 @@
       "id": "custom_cluster",
       "kind": "app",
       "title": "Custom Cluster",
-      "version": "0.6.8",
+      "version": "0.6.9",
       "path": "apps/custom_cluster",
       "icon": "icon.png",
       "mguHmi": [
@@ -208,7 +208,7 @@
       "id": "cluster_lyrics",
       "kind": "app",
       "title": "Cluster Lyrics",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "path": "apps/cluster_lyrics",
       "mguHmi": [
         "ID7"
