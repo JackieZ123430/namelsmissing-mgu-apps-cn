@@ -25,6 +25,7 @@ These apps are **Experimental**. They are still being developed or tested, and s
 | --- | --- | --- |
 | [**Ambient Lighting**](apps/g21_ambient/README.md) (`g21_ambient`) | **Experimental** | Choose ambient-light colors, configure lighting zones, save presets and test color changes. Applying custom colors to the car is not fully verified. |
 | [**Custom Cluster**](apps/custom_cluster/README.md) (`custom_cluster`) | **Experimental** | Preview custom instrument-cluster layouts inspired by the G80, G21 and 6WB. Integration with the real cluster and Waze is still being tested. |
+| [**Cluster Lyrics**](apps/cluster_lyrics/README.md) (`cluster_lyrics`) | **Experimental** | Shows synchronised lyrics for the song playing on your Spotify account, optionally in the instrument cluster's map window instead of the Waze map. Needs internet in the car and your own Spotify app; not yet tested on a vehicle. |
 | [**GameStation**](apps/mgu_gamestation/README.md) (`mgu_gamestation`) | **Experimental** | Play offline retro games such as Pong and supported console games. Use the iDrive controller or phones as controllers. |
 | [**GameSnacks**](apps/mgu_gamesnacks/README.md) (`mgu_gamesnacks`) | **Experimental** | Prototype for playing offline HTML5 games on the iDrive display. Game availability and compatibility are still under review. |
 | [**Video Hub**](apps/mgu_video_hub/README.md) (`mgu_video_hub`) | **Experimental** | Play local videos and work with YouTube links. Playback requires additional software; online videos also need an internet connection. |

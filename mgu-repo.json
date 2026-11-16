@@ -193,6 +193,27 @@
       }
     },
     {
+      "id": "cluster_lyrics",
+      "kind": "app",
+      "title": "Cluster Lyrics",
+      "version": "0.1.0",
+      "path": "apps/cluster_lyrics",
+      "mguHmi": [
+        "ID7"
+      ],
+      "requires": {
+        "cluster-render": "0.4.0"
+      },
+      "build": {
+        "python": "tools/build_store_app.py",
+        "args": [
+          "{id}"
+        ],
+        "sdk": "oap-sdk",
+        "output": "dist/{id}@{version}.tgz"
+      }
+    },
+    {
       "id": "mgu_phone_terminal",
       "kind": "app",
       "title": "Phone Terminal",
