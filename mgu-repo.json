@@ -153,6 +153,17 @@
       "uninstallable": true
     },
     {
+      "id": "mgu-cluster-net",
+      "kind": "tool",
+      "title": "Custom Cluster Phone Port",
+      "version": "0.1.0",
+      "path": "native/cluster-net",
+      "mguHmi": [
+        "ID7"
+      ],
+      "uninstallable": true
+    },
+    {
       "id": "gif_home",
       "kind": "app",
       "title": "GIF Home",
@@ -174,14 +185,15 @@
       "id": "custom_cluster",
       "kind": "app",
       "title": "Custom Cluster",
-      "version": "0.6.7",
+      "version": "0.6.8",
       "path": "apps/custom_cluster",
       "icon": "icon.png",
       "mguHmi": [
         "ID7"
       ],
       "requires": {
-        "cluster-render": "0.4.0"
+        "cluster-render": "0.4.0",
+        "mgu-cluster-net": "0.1.0"
       },
       "build": {
         "python": "tools/build_store_app.py",
