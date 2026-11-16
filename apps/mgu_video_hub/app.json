@@ -2,7 +2,7 @@
   "id": "mgu_video_hub",
   "title": "MGU Video Hub",
   "description": "Play local videos and open YouTube links while parked. Extra playback tools may be required.",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "mguInternet": true,
   "vendor": "G21 Offline Lab",
   "loggingId": "OVH1",
@@ -18,10 +18,9 @@
       "kind": "canvas",
       "title": "MGU Video Hub",
       "buttons": [
-        ["BTN_TAB", "Next tab"],
+        ["BTN_PAGE", "Next page"],
         ["BTN_ACTION", "Play / Pause"],
         ["BTN_BACK", "Back"],
-        ["BTN_IMPORT", "Phone / USB"],
         ["BTN_AUDIO_EQ", "Audio EQ"],
         ["BTN_SETTINGS", "Settings"]
       ]
