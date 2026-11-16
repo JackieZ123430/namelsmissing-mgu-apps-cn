@@ -1,5 +1,21 @@
-# Custom Cluster 0.6.7 — BMW G21 / MGU iDrive 7
+# Custom Cluster 0.6.8 — BMW G21 / MGU iDrive 7
 
+
+## 0.6.8 — phone status line (green = opened, red = closed)
+
+The iPhone Shortcuts link is reduced to one fact: **the Blitzer app on the phone was opened or closed** (as iOS reports it). The old dot is replaced by one thin, soft-ended line (160 x 4 px, 90 % opacity). It is off by default (setting **Phone status line**, plus **iPhone Shortcuts bridge**).
+
+| Where | Position | Why there |
+| --- | --- | --- |
+| Map window (normal driving, e.g. over the Waze map) | x 464, y 469 of 1088 x 480, bottom centre | Below the lyrics bands of Cluster Lyrics (they end at y 384), above nothing |
+| Parked KOMBI test, OEM / G80 / Classic / 6WB | x 168, y 540, centred under the speed instrument (left cover plate) | Lowest lit pixel of the dial faces is y 505; cover plate ends at y 596 |
+| Parked KOMBI test, Sport / Minimal | x 123, y 540, aligned with the left end of their own rule | same free area |
+
+Never in the top telltale row, never over the bottom strip, never in both places at once. It does not take the centre slot (`contend` off) and keeps BMW's turn box (`guide_hold` off). No event, or an event older than 6 hours: no line. `tests/custom_cluster_phone.test.js` checks these rectangles against the lit parts of every layout.
+
+**New root tool `mgu-cluster-net`** (installed as a requirement): BMW's firewall drops inbound connections on the car Wi-Fi, so the phone could never reach the app. The tool opens exactly one rule (`tcp 18977` on `wlan_bridge`, own tag, other tools' rules are never touched) and only while the app's loopback health endpoint reports that the link is listening. If the app stops, the rule is removed. The app also retries every 5 s when the CarPlay Wi-Fi address appears later, and rebinds when it changes. The phone page (`Phone link` button on the QR page) shows the five steps (setting, address, listening, firewall, last event), the two automations to create, and QR codes for the "opened" and "closed" links.
+
+**Limits (unchanged, honest):** iOS fires "closed" when the app leaves the foreground, also when it keeps running in the background, so the line is **not** proof that Blitzer is active, and no warning data is read or shown. Not verified on a real car: CarPlay Wi-Fi reachability of the head unit, the firewall tool on a real MGU, GLSL output of the line, and its visibility over the Waze map.
 
 ## 0.6.7 — cover plates, lit scales, gear and temperatures
 
@@ -268,9 +284,9 @@ Both sockets must be accessible. The app reports the **request**, not confirmati
 
 The Waze render socket is `/dev/shm/waze-on-cluster/ctl.sock`; the patch daemon socket is `/dev/shm/waze-on-cluster/patch.sock`. Those are upstream internal protocols and should be retested when updating the Waze app. The panel and HUD **reuse scene ID `0x01000400` and cannot both be requested at once**. If Waze is sending a HUD feed, disable it in the original Waze app before a parked G80 panel test; Custom Cluster does **not** change the HUD feed by itself. Rendering `panel` and `map` simultaneously is marked **CAR-ONLY / not verified** in upstream `cluster-render` documentation. The opening in the G80 shader is a transparency window, not proof that Waze will appear there.
 
-## iPhone status badge
+## iPhone status line
 
-Optional Shortcuts bridge from v0.1.0 remains. It accepts authenticated, locally scoped `opened`/`closed` events from iPhone Shortcuts and shows a small neutral dot while a recent `opened` event exists. **It cannot verify that Blitzer.de remains active in the background**, and it sends no radar-warning data. Configure the Shortcuts app-open and app-close events using the generated bridge URLs on the iDrive screen. A CarPlay Wi-Fi link does not guarantee that the phone can reach the head unit's HTTP server. Background presence / speed-camera warnings are **not integrated**. Warning functions are restricted for drivers in Germany under § 23(1c) StVO.
+See 0.6.8 above. The bridge accepts only `GET /s/<token>/on` and `/off` (random token stored in the app data dir) and answers `OK`; it never sends app data back. Warning functions of speed-camera apps are restricted for drivers in Germany under § 23(1c) StVO, and **no radar-warning data is integrated**.
 
 ## Build and deployment
 
@@ -288,13 +304,15 @@ No `cluster-render` dependency is automatically installed by the app. Your Store
 * `sixwb_panel_shader.js`: original 6WB-inspired GLSL dial artwork, three preset styles with optional Color Studio tint; permanently transparent centre map window.
 * `cluster_shader.js`: M Sport, Classic and Minimal decorative layers with the 504×368 map-safe area always transparent.
 * `cluster_colors.js`: preset palette, RGB and colour animation shared by all custom layouts, controlled solely through MGU settings.
-* `cluster_layers.js`: one renderer client; own refs for `map`, `panel`, phone badge; strictly guarded panel test; no demo data on KOMBI.
+* `cluster_layers.js`: one renderer client; own refs for `map`, `panel`, phone status line; strictly guarded panel test; no demo data on KOMBI.
 * `panel_probe_shader.js`: compact GLSL test, outside the map aperture.
 * `cluster_diagnostics.js`, `qr_vendor.js`: read-only renderer, QR and USB logs.
 * `waze_control.js`: optional one-shot requests to original Waze sockets; no root commands, patch install/revert, or HUD edits.
 * `g80_preview.js`: iDrive-only canvas design, synthetic graphic centre map as a **mockup** (not a live Waze map).
 * `sixwb_preview.js`: iDrive-only classic 6WB dial preview, with Comfort/Sport/ECO PRO colours and the same map mockup caveat.
-* `phone_bridge.js`: Shortcuts event bridge, expiring status.
+* `phone_bridge.js`: Shortcuts event bridge (retry, loopback health endpoint, expiring status).
+* `status_line.js`: line shader, colours and per-layout rectangles.
+* `native/cluster-net/`: root firewall tool for TCP 18977 (own tag, only while the app listens).
 * `cluster_render_client.js`: upstream `cluster-render` client (MPL-2.0) by Robert Nisipeanu, see `NOTICE` / `LICENSE`.
 
 Validation: built against extracted OAP SDK 24.10.2 (`x_call@4.25.3` donor), JS syntax and mocked unit tests passed, HMI preview rendered on PC. **Unvalidated**: GLSL compilation and output on the real cluster GPU, concurrent panel/Waze/HUD behaviour, warnings, phone-to-MGU Wi-Fi, socket authorization and actual MGU Store install. Test with a full diagnostic log. A cluster that looks normal during a short stationary test is not sufficient to approve driving.

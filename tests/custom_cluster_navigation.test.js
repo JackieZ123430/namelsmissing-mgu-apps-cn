@@ -22,6 +22,8 @@ for (const screen of spec.screens) {
 
 const clicks = new Map(), pages = [], loops = [], events = [];
 const labels = new Map(), renders = new Map(), drawn = [];
+const phoneStates = [];
+let phoneTicks = 0;
 let reportCount = 0, cleared = 0, clearedMemory = 0, savedTxt = 0, restored = 0, pollRequested = null, lastOptions, armCalls = 0;
 const ui = {
     onClick: (name, fn) => clicks.set(name, fn),
@@ -45,7 +47,7 @@ const ctx = {
     theme: () => ({ bg: '#000', text: '#fff', dim: '#bbb', warn: '#e80' }),
 };
 const cluster = {
-    settings(o) { lastOptions = o; }, sample() {}, observeVehicle() {}, apply() {}, pollStatus() {}, badge() {}, close() {},
+    settings(o) { lastOptions = o; }, sample() {}, observeVehicle() {}, apply() {}, pollStatus() {}, phone(state) { phoneStates.push(state); }, close() {},
     clearHistory() { clearedMemory++; },
     restoreOriginal() { restored++; return 'release requested'; },
     setTraceSink() {},
@@ -63,7 +65,12 @@ class FakeCar {
     data() { return { stage: 'N' }; }
 }
 class FakeCluster { constructor() { return cluster; } }
-class FakePhone { setEnabled() {} reported() { return 'none'; } stop() {} }
+class FakePhone {
+    constructor() { this.host = '172.16.250.5'; this.port = 18977; this.net = {}; }
+    setEnabled() {} tick() { phoneTicks++; } reported() { return 'opened'; } ageSeconds() { return 12; }
+    listening() { return true; } url(state) { return 'http://172.16.250.5:18977/s/tok/' + (state === 'on' ? 'on' : 'off'); }
+    stop() {}
+}
 class FakeWaze { constructor() { this.status = 'auto'; } setChoice() {} }
 const report = () => { reportCount++; return { id: 'test', pages: ['page1', 'page2'], storedAt: [] }; };
 const deps = {
@@ -166,6 +173,20 @@ async function test() {
     clicks.get('BTN_TEST')();
     clicks.get('BTN_DIAG')();
     assert.strictEqual(labels.get('BTN_DIAG'), 'Back to cluster');
+    // phone link page: reached from the QR page, toggles opened/closed link, never leaves MAIN
+    clicks.get('BTN_DIAG')(); // diagnostics -> main
+    await clicks.get('BTN_QR')(); // main -> QR page
+    clicks.get('BTN_LOG')(); // QR page -> phone link page
+    assert.strictEqual(labels.get('BTN_QR'), 'Show "closed" link');
+    drawn.length = 0;
+    await renders.get('MAIN')();
+    assert.ok(drawn.some((x) => x.includes('/s/tok/on')), 'opened link shown');
+    clicks.get('BTN_QR')();
+    assert.strictEqual(labels.get('BTN_QR'), 'Show "opened" link');
+    drawn.length = 0;
+    await renders.get('MAIN')();
+    assert.ok(drawn.some((x) => x.includes('/s/tok/off')), 'closed link shown');
+    assert.deepStrictEqual(pages, [], 'phone page stays inside MAIN');
     events[0]('MAIN', false);
     events[0]('MAIN', true); // Home/Settings/app tile returns to MAIN
     assert.strictEqual(labels.get('BTN_DIAG'), 'Diagnostics', 'fresh MAIN visibility must clear stale diagnostic view');

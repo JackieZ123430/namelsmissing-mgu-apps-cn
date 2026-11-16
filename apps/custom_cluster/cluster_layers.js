@@ -5,17 +5,7 @@ const { ClusterRender } = require('./cluster_render_client.js');
 const probeShader = require('./panel_probe_shader.js');
 const { PALETTE, resolveColor, resolve6WBColor, colorHex } = require('./cluster_colors.js');
 const COLORS = Object.keys(PALETTE).reduce((m, k) => { m[k] = PALETTE[k].concat([1]); return m; }, {});
-const BADGE_FS = `#version 100
-precision mediump float;
-varying vec2 v_uv;
-void main() {
-  vec2 p=v_uv-vec2(0.5);
-  float r=length(p);
-  float outside=1.0-smoothstep(0.43,0.48,r);
-  float inside=1.0-smoothstep(0.16,0.20,r);
-  vec3 c=mix(vec3(0.03,0.26,0.17),vec3(0.36,1.0,0.60),inside);
-  gl_FragColor=vec4(c,outside);
-}`;
+const StatusLine = require('./status_line.js');
 // Independent tiny effects: inspired by the architecture (not the code) of
 // Cluster Layouts and Cluster Themes. No full-screen fragment shader here.
 const PIECE_FS = `#version 100
@@ -71,6 +61,8 @@ class ClusterLayers {
         this.layoutParts = [];
         this.layoutAccent = null;
         this.badgeRef = 0;
+        this.badgeTarget = null;
+        this.badgeState = '';
         this.ready = false;
         this.layerState = 'inactive';
         this.targetState = 'unknown';
@@ -102,7 +94,7 @@ class ClusterLayers {
             sixwbTheme: 'comfort', sixwbColorSource: 'original',
             colorMode: 'palette', colorBrightness: 100,
             panelTestMode: 'probe', panelTarget: 'panel', coverOriginal: true };
-        this.phoneOpen = false;
+        this.phoneState = 'unknown';
         this.lastSent = 0;
         this.armedUntil = 0;
         this.disarmReason = 'Off by default';
@@ -238,7 +230,7 @@ class ClusterLayers {
         this.layoutParts = []; this.layoutAccent = null;
         owned.forEach(ref => this.cr.drop(ref));
         if (this.effectRef) { this.cr.drop(this.effectRef); this.effectRef = 0; }
-        if (this.badgeRef) { this.cr.drop(this.badgeRef); this.badgeRef = 0; }
+        this.dropStatusLine();
         this.recoveryRequestedAt = Date.now();
         this.recoveryStatusAt = 0;
         this.recoveryTarget = this.activePanelTarget;
@@ -329,7 +321,17 @@ class ClusterLayers {
             this.apply();
         }
     }
-    badge(opened) { this.phoneOpen = !!opened; this.apply(); }
+    /** Last event of the phone link: 'opened', 'closed' or 'unknown'. */
+    phone(state) {
+        state = StatusLine.valid(state) ? state : 'unknown';
+        if (state === this.phoneState) return;
+        this.phoneState = state;
+        this.apply();
+    }
+    dropStatusLine() {
+        if (this.badgeRef) this.cr.drop(this.badgeRef);
+        this.badgeRef = 0; this.badgeTarget = null; this.badgeState = '';
+    }
     live() {
         if (!this.lastSample || Date.now()-this.lastSample>=30000) return false;
         const t=this.latestSignalTimes;
@@ -546,14 +548,26 @@ class ClusterLayers {
         // automatically inject sport/classic/minimal artwork into the map
         // target when selected in settings. Keep independent Waze control.
         if(this.effectRef) { this.cr.drop(this.effectRef); this.effectRef=0; }
-        const wantBadge = this.options.phoneBadge && this.phoneOpen && !panelActive;
-        if (wantBadge && !this.badgeRef) {
-            // No contend: a stock layout does NOT seize the centre-slot from BMW.
-            // When Waze has that slot, this floats over it (same compositor).
-            this.badgeRef = this.cr.effect({ target: 'map', klass: 'overlay',
-                contend: false, x: 992, y: 9, w: 74, h: 74, fs: BADGE_FS });
+        // Phone status line. During a parked panel test it belongs to the
+        // tested layout; otherwise it sits in the map window. Never both.
+        const state = this.options.phoneBadge ? this.phoneState : 'unknown';
+        const where = !StatusLine.valid(state) ? null :
+            panelActive ? (this.panelRef ? this.activePanelTarget : null) : 'map';
+        if (this.badgeRef && where !== this.badgeTarget) this.dropStatusLine();
+        if (where && !this.badgeRef) {
+            const r = where === 'map' ? StatusLine.MAP_RECT : StatusLine.panelRect(this.options.layout);
+            // No contend: the centre slot is never taken from BMW. guide_hold 0:
+            // BMW's turn box stays visible. Where Waze has the map window, the
+            // line floats over its bottom edge (same compositor).
+            this.badgeRef = this.cr.effect({ target: where, klass: 'overlay', z: StatusLine.Z,
+                contend: false, guide_hold: false, x: r.x, y: r.y, w: r.w, h: r.h, fs: StatusLine.LINE_FS });
+            this.badgeTarget = this.badgeRef ? where : null;
+            this.badgeState = '';
         }
-        if (!wantBadge && this.badgeRef) { this.cr.drop(this.badgeRef); this.badgeRef = 0; }
+        if (this.badgeRef && this.badgeState !== state) {
+            this.cr.uniform(this.badgeRef, 'u_color', StatusLine.color(state));
+            this.badgeState = state;
+        }
     }
     status() {
         // The last *reported* selector position is independent from the
