@@ -127,6 +127,15 @@ This repository contains the apps' source code and build tools, but no BMW SDK. 
 
 **Privacy:** never upload BMW SDK files, diagnostic PRG files, SSH keys, VINs, personal data or logs that contain sensitive vehicle information.
 
+## Credits
+
+These apps would not exist without the work of:
+
+- **[cauliflowermossgrape](https://github.com/cauliflowermossgrape)** for the [idrive7-apps](https://github.com/cauliflowermossgrape/idrive7-apps) kit, the iDrive 7 app framework these apps are built on.
+- **[robertnisipeanu](https://github.com/robertnisipeanu)** for [MGU Store](https://github.com/robertnisipeanu/mgu-store), which installs, builds and updates these apps directly in the car.
+
+Thank you both!
+
 ---
 
 **License and third-party components:** see the license files and notices included with each app and dependency.
