@@ -90,7 +90,14 @@ You don't have to type on the car at all:
 | App | Status | What it's for |
 | --- | --- | --- |
 | [**Light Show**](apps/light_show/README.md) | Experimental | Plays light animations with the headlights while the car is parked, and lets you test and name the individual lights. |
-| [**Light Flasher**](apps/light_flasher/README.md) | Experimental | Flashes your own light patterns while parked. Optionally starts with a short pull on the headlight-flasher stalk. |
+| [**Light Flasher**](apps/light_flasher/README.md) | Experimental | Makes the headlights flash rapidly like a strobe while parked. Starts with a button in the app or a short pull on the headlight-flasher stalk. |
+
+**How Light Flasher works:** instead of one normal flash, the headlights flash on and off several times in quick succession, like a strobe light. You set the rhythm in the app (from very fast, 100 ms, to slower, 1 second, between flashes) and how long the strobe runs (2–5 seconds). You start it in one of two ways:
+
+- **Button:** tap **Start flash pattern** on the app's main screen.
+- **Stalk:** briefly pull the headlight-flasher stalk, as for a normal flash. The app recognises the pull and runs the strobe pattern once. This also works with the app closed, as long as it is running in the background.
+
+Both only work when the car is stationary in **P** and are turned off by default; switch them on in the app's settings. Use it only on private ground with nobody in front of the car.
 
 ### Tools
 
