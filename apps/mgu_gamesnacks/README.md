@@ -1,66 +1,96 @@
-# MGU GameSnacks - separate offline-game project (0.1.1 preview)
+# MGU GameSnacks 0.2.0 (experimental)
 
-This is a **standalone fifth BMW iDrive 7 MGU app**. It is independent from
-`mgu_gamestation`. The target is a catalog of **real original GameSnacks games
-installed locally**, not a website iframe or a phone-streaming solution.
+Small games for the parked car on the BMW iDrive 7 (MGU) screen, in two parts:
 
-**This preview does not contain or play any Google/Famobi/ZeptoLab games.**
-It provides a native MGU game-review list, individual rights/compatibility
-status pages, and a vehicle-speed fail-closed interlock foundation. It does
-not modify ECUs. It is not an official Google application.
+- **Four own mini-games**, drawn natively on the head unit: **2048**, **Snake**, **Blocks**
+  and **Mines**. They are written for this app (no third-party game code or art) and work
+  offline. Best scores are kept in the app data folder.
+- **Web mirror**: a Chromium browser on a Raspberry Pi or laptop in the car opens
+  [gamesnacks.com](https://gamesnacks.com/). Its picture is shown on the iDrive screen, and
+  touches and the iDrive controller are sent back - like a browser on the head unit.
 
-## Touch input
+UI language: English. The app never writes to vehicle control units. It is not an official
+Google or BMW application.
 
-The native catalog is touch-operated through `cv.target(...)`, and the app has
-a **Touch test** page that reports down/move/up, drag positions and normalized
-coordinates. It calls the MGU runtime's `ctx.onTouch(...)` callback. This
-requires the real `mgu-renderd` touch input path (and input gate) and must be
-confirmed on the car. The iDrive button controls remain available.
+## Only while parked
 
-Google's requirements say original GameSnacks games must work with touch and
-mouse input, but forwarding these events to a real HTML5 game is contingent on
-an approved offline bundle and a working MGU browser renderer. The current
-preview **does not claim in-game touch playback is already implemented**.
+Games and the mirror run only while a **fresh, valid vehicle-speed signal** (Vehicle2, at most
+5 s old) says **0.5 km/h or less**. Without the signal or when the car moves, the games pause,
+the mirror picture is hidden and the browser on the mirror host is frozen
+(`Page.setWebLifecycleState frozen`) until the car stands still again.
 
-## Why no original content is packaged yet
+## Mini-games
 
-The games visible on `gamesnacks.com` are not automatically licensed for
-copying into third-party applications or a public GitHub repository. Google's
-`allowOfflineUse` developer property controls offline availability *inside*
-GameSnacks partner distribution; it is **not** a grant to extract files from
-the website. The partner API exposes hosted games, not freely redistributable
-source archives. Only add game data after the holder grants the necessary
-offline installation, adaptation and distribution rights.
+| Game | Touch | iDrive controller |
+| --- | --- | --- |
+| 2048 | swipe | tilt |
+| Snake | swipe, or tap beside the head to turn there | tilt; turn = turn left / right |
+| Blocks | tap left / right third = move, middle = rotate, swipe down = drop | tilt left / right / down, turn = rotate, press = drop |
+| Mines | tap = open, hold = flag | tilt or turn = move cursor, press = open, long press = flag |
 
-Google's official game bundle format uses `game.json`, an HTML entrypoint and
-relative code/data assets. Games use browser Canvas or WebGL. This BMW app
-runs in the Node 8/OAP process and draws via `mgu-renderd`, not an HTML5
-browser. The runtime needs to be validated on the real MGU first.
+Bar buttons: **Games** (start page), **Web mirror**, **New game**, **Settings**. After game over,
+a tap or press starts the next round. The controller is captured only while a game or the mirror
+is open, the car is parked and the app has focus (needs `mgu-inputgate`, like GameStation);
+otherwise the FrontCCU signal is read as a fallback.
 
-## First candidate review
+## Web mirror
 
-See `REVIEW.md` for named publishers, sources and remaining checks. Best
-starting points: Famobi's Smarty Bubbles and Train 2048, since Famobi
-specifically offers licensing of HTML5 packages that may be hosted locally.
-The specific license terms and pricing are **not yet obtained**. Do not fetch
-game assets from the public gamesnacks.com web pages into this repository.
+The head unit has no HTML5 engine, so the browser runs elsewhere and the MGU only shows its
+picture:
 
-## Next technical test
+```
+Pi / laptop                                   MGU (this app)
+Chromium (Playwright) -- gamesnacks.com
+   screencast JPEG -> RGBA, zlib  ---- TCP 18960 ---->  picture on the iDrive screen
+   touch / keys / back / reload   <-----------------   touch, controller, toolbar
+```
 
-With the car parked, access the head unit through the existing root SSH method
-and run the **read-only** tool `tools/probe_mgu_web_runtime.sh` (copy it to the
-head unit first). It only reports whether candidate browser or WebKit binaries
-and libraries are present. A negative result is inconclusive; a positive
-result does not by itself prove that HTML5 games can share the HMI framebuffer.
+1. Put the Pi or laptop on the car's network: the BMW Wi-Fi hotspot, or the head unit's USB
+   network. It needs internet itself (its own LTE stick or phone tethering) to load
+   gamesnacks.com.
+2. Install once on it:
+   ```sh
+   pip install playwright pillow
+   python3 -m playwright install chromium     # or use --browser-path /usr/bin/chromium
+   ```
+3. Start the host from this repository: `python3 tools/gamesnacks_mirror.py`
+   (options: `--start-url`, `--port`, `--allow 172.16.222.0/24`, `--mute`, `--headful`).
+4. On the iDrive open **Web mirror**. The app finds the host by itself: it tries every device in
+   the head unit's ARP table on port 18960. A fixed address can be put into
+   `mirror-host.json` in the app data folder: `{"hosts": ["192.168.1.20", "pi.local:18960"]}`.
 
-Once an authorized game bundle and a working local HTML renderer are available,
-we can implement and verify its game-specific input adapter, audio, persistence,
-FPS, full offline operation and park interlock. The preview refuses to claim
-any game is playable until all of these gates are satisfied.
+On the mirror page: touch works as on a phone (tap, drag to scroll). Toolbar: **Back**,
+**Home** (start page), **Reload**, **Exit**. Controller: tilt = arrow keys, turn = scroll,
+press = Enter, long press = back. **Settings → Web mirror picture** chooses Fast / Balanced /
+Sharp (40 / 60 / 100 % of the 1462 x 494 picture area; Sharp means more Wi-Fi traffic).
 
-## Offline validation without BMW hardware
+Sound plays on the Pi / laptop (its speaker or the car's AUX/Bluetooth), not through the MGU.
+
+Nothing from the website is stored or redistributed: the host is an ordinary browser whose
+screen is shown in the car. GameSnacks' own terms of use apply as for any visit of the site.
+The host accepts connections only from private networks by default and serves one car at a time.
+
+### Not yet confirmed in the car
+
+- Whether an OAP app may open outgoing TCP connections to devices on the hotspot / USB network
+  (no head-unit firewall rule is opened; the app only connects outwards).
+- Whether `/proc/net/arp` is readable inside the OAP sandbox (otherwise use `mirror-host.json`).
+- Frame rate and CPU load at each picture setting on the real MGU (the picture is inflated with
+  Node's zlib off the main thread and drawn by `mgu-renderd`).
+- Touch routing through `mgu-renderd` / `mgu-inputgate` on the real head unit.
+- How GameSnacks pages lay out in the wide 1462 x 494 viewport.
+
+## Tests (PC, no car needed)
 
 ```sh
-node tests/gamesnacks.test.js
-python3 -c "import json,sys;sys.path.insert(0,'kit/tools');from build import build_ui;build_ui(json.load(open('apps/mgu_gamesnacks/app.json')))"
+node tests/gamesnacks.test.js                 # games, touch, controller, protocol, mirror client
+python3 -m pytest tests/test_gamesnacks_mirror.py   # host; end-to-end with headless Chromium if installed
 ```
+
+## Changes in 0.2.0
+
+- Replaces the 0.1.x licence-review preview (which had no playable game) with four playable
+  own mini-games and the web mirror.
+- The list of licence candidates (`REVIEW.md`) and the read-only browser probe
+  (`tools/probe_mgu_web_runtime.sh`) are gone: original GameSnacks games are still not copied
+  into the app; the mirror shows the website instead.
