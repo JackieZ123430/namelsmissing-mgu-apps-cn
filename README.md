@@ -138,4 +138,19 @@ Thank you both!
 
 ---
 
-**License and third-party components:** see the license files and notices included with each app and dependency.
+## License
+
+Copyright (C) 2026 NamelsMissing
+
+Original code and contributions by NamelsMissing are licensed under the
+**GNU General Public License v3.0 only** (`GPL-3.0-only`), except where
+explicitly stated otherwise. See [LICENSE](LICENSE) for the full terms.
+Redistributions must preserve the applicable copyright and license notices.
+
+Third-party code and components retain their respective licenses and copyright
+notices, including the MIT-licensed app kit and QR generators, MPL-2.0-covered
+cluster components, and the separately licensed GPL-2.0 GameStation app.
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and the license files,
+source headers and notices included with each app and dependency.
+
+Project: https://github.com/NamelsMissing/mgu-apps
