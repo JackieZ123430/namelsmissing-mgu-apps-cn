@@ -75,7 +75,7 @@ You don't have to type on the car at all:
 | App | Status | What it's for |
 | --- | --- | --- |
 | [**GameStation**](apps/mgu_gamestation/README.md) | Experimental | Retro games such as Pong and classic console games, with in-game saves. Play with the iDrive controller, or use up to two phones as gamepads (needs the GameStation Phone Port tool, installed with it). |
-| [**GameSnacks**](apps/mgu_gamesnacks/README.md) | Experimental | Four small games (2048, Snake, Blocks, Mines) played by touch or iDrive controller, plus a web mirror that shows gamesnacks.com from a browser on a Raspberry Pi or laptop in the car. |
+| [**GameSnacks**](https://github.com/NamelsMissing/mgu-apps-beta/tree/main/apps/mgu_gamesnacks) | Moved | Now in [mgu-apps-beta](https://github.com/NamelsMissing/mgu-apps-beta): small games (2048, Snake, Blocks, Mines) and a gamesnacks.com web mirror. Install it from that repository's store source. |
 | [**Video Hub**](apps/mgu_video_hub/README.md) | Experimental | Watch your own videos and YouTube links on the iDrive screen. Needs extra software on the head unit; YouTube also needs internet. |
 
 ### Sound
