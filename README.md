@@ -59,7 +59,7 @@ You don't have to type on the car at all:
 | --- | --- | --- |
 | [**Heating Comfort**](apps/g21_wheelheat/README.md) | Stable | Turns the seat and steering-wheel heating on by itself when it's cold. You choose from which temperature; manual buttons are there too. |
 | [**DPF Monitor**](apps/dpf_monitor/README.md) | Stable | For diesel cars: shows how full the particulate filter is and when it last cleaned itself. Only reads data; it doesn't start a cleaning cycle. |
-| [**Vehicle Data**](apps/vehicle_data/README.md) | Experimental | Reads mileage, upcoming services and the service history from the car. Runs in the background and passes the data to the [BMW AI](https://github.com/NamelsMissing/mgu-chatgpt-bridge) companion. Only reads data. |
+| [**Vehicle Data**](https://github.com/NamelsMissing/mgu-chatgpt-bridge/tree/main/apps/vehicle_data) | Moved | Now part of [BMW AI](https://github.com/NamelsMissing/mgu-chatgpt-bridge): reads mileage, upcoming services and the service history and passes them to the BMW AI companion. Install it from that repository's store source. |
 | [**Ambient Lighting**](apps/g21_ambient/README.md) | Experimental | Choose your own colour and brightness for the interior ambient light, per zone, and save your favourite looks. |
 
 ### Screens and instrument cluster
