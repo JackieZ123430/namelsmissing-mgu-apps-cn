@@ -8,9 +8,15 @@ const MAPPING = {
     start: C.START, up: C.UP, down: C.DOWN,
     left: C.LEFT, right: C.RIGHT,
 };
+// Cartridge RAM at CPU $6000-$7FFF; battery-backed on carts with header bit 1 of byte 6.
+const SRAM_START = 0x6000, SRAM_SIZE = 0x2000;
 
 class NesGame {
-    constructor(bytes, output) {
+    /**
+     * bytes: the .nes file; output(rgba, w, h): called once per finished video frame;
+     * options.save: earlier battery RAM (Buffer), loaded before the CPU starts.
+     */
+    constructor(bytes, output, options) {
         this.title = 'NES'; this.width = 256; this.height = 240;
         this.output = output;
         this.rgba = Buffer.alloc(256 * 240 * 4);
@@ -25,7 +31,11 @@ class NesGame {
             },
             updateScreen: () => output(this.rgba, 256, 240),
         });
-        this.nes.setRom(new lib.Rom(Uint8Array.from(bytes).buffer));
+        const rom = new lib.Rom(Uint8Array.from(bytes).buffer);
+        this.battery = !!rom.header.getBatteryBackedRAM();
+        this.nes.setRom(rom);
+        const save = options && options.save;
+        if (this.battery && save && save.length === SRAM_SIZE) this.nes.cpu.ram.data.set(save, SRAM_START);
         this.nes.bootup();
     }
     tick(pads) {
@@ -42,7 +52,12 @@ class NesGame {
         // One NTSC video frame = 341 dots * 262 scanlines / 3 PPU dots per CPU clock.
         for (let i = 0; i < 29781; i++) this.nes.runCycle();
     }
-    stop() { this.nes.stop(); this.nes = null; }
+    /** Battery RAM to keep (a copy), or null when the cartridge has none. */
+    sram() {
+        if (!this.battery || !this.nes) return null;
+        return Buffer.from(this.nes.cpu.ram.data.subarray(SRAM_START, SRAM_START + SRAM_SIZE));
+    }
+    stop() { if (this.nes) this.nes.stop(); this.nes = null; }
 }
 
-module.exports = {NesGame};
+module.exports = {NesGame, SRAM_SIZE};

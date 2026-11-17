@@ -74,7 +74,7 @@ You don't have to type on the car at all:
 
 | App | Status | What it's for |
 | --- | --- | --- |
-| [**GameStation**](apps/mgu_gamestation/README.md) | Experimental | Retro games such as Pong and classic console games. Play with the iDrive controller, or use up to two phones as gamepads. |
+| [**GameStation**](apps/mgu_gamestation/README.md) | Experimental | Retro games such as Pong and classic console games, with in-game saves. Play with the iDrive controller, or use up to two phones as gamepads (needs the GameStation Phone Port tool, installed with it). |
 | [**GameSnacks**](apps/mgu_gamesnacks/README.md) | Experimental | Preview for small offline games on the iDrive screen. It doesn't contain any playable games yet. |
 | [**Video Hub**](apps/mgu_video_hub/README.md) | Experimental | Watch your own videos and YouTube links on the iDrive screen. Needs extra software on the head unit; YouTube also needs internet. |
 

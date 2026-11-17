@@ -1,8 +1,8 @@
 {
   "id": "mgu_gamestation",
   "title": "MGU GameStation",
-  "description": "Offline retro games with iDrive or phone controllers and multiplayer options.",
-  "version": "0.2.0",
+  "description": "Offline retro games with iDrive or phone controllers, two players and in-game saves. Parked only.",
+  "version": "0.3.0",
   "vendor": "G21 Offline Lab",
   "loggingId": "OAG1",
   "iconGlyph": "GAME",
@@ -18,9 +18,9 @@
       "kind": "canvas",
       "title": "MGU GameStation",
       "buttons": [
-        ["BTN_PLATFORM", "Next platform"],
+        ["BTN_PLATFORM", "Next console"],
         ["BTN_ACTION", "Play / Back"],
-        ["BTN_PAIR", "Connect phones"],
+        ["BTN_PAIR", "Controllers"],
         ["BTN_SETTINGS", "Settings"]
       ]
     }
