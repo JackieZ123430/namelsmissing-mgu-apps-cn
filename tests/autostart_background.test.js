@@ -23,6 +23,8 @@ assert.strictEqual(setting(cc, 'phoneBridge').default, false);
 assert.strictEqual(setting(cc, 'phoneBadge').default, false);
 assert.strictEqual(setting(cl, 'kombiOn').default, false);
 assert.deepStrictEqual(setting(cc, 'kombiAuto').options.map((o) => o[0]), ['off', 'parked']);
+assert.strictEqual(setting(cc, 'gearDisplay').default, 'gear');
+assert.deepStrictEqual(setting(cc, 'gearDisplay').options.map((o) => o[0]), ['selector', 'gear', 'gear_estimate']);
 
 const { BackgroundStatus } = require('../apps/custom_cluster/background_status');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bg-'));

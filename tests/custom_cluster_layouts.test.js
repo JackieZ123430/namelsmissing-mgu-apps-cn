@@ -51,6 +51,28 @@ assert.equal(L.gearText({stage:'P'}),'P');
 assert.equal(L.gearText({stage:'D',gear:4}),'D4');
 assert.equal(L.gearText({stage:'D',gear:4,gearGuessed:true}),'D');
 assert.equal(L.gearText({}),'--');
+// setting gearDisplay: D only / real gear (default) / also the estimate
+assert.equal(L.gearText({stage:'D',gear:3,gearMode:'selector'}),'D');
+assert.equal(L.gearText({stage:'D',gear:3,gearMode:'gear'}),'D3');
+assert.equal(L.gearText({stage:'D',gear:3,gearGuessed:true,gearMode:'gear'}),'D','estimate hidden by default');
+assert.equal(L.gearText({stage:'D',gear:3,gearGuessed:true,gearMode:'gear_estimate'}),'D3','estimate shown on request');
+assert.equal(L.gearText({stage:'D',gearMode:'gear_estimate'}),'D','nothing known: plain D');
+assert.equal(L.gearText({stage:'D',gear:0,gearMode:'gear_estimate'}),'D');
+assert.equal(L.gearText({stage:'D',gear:11,gearMode:'gear'}),'D','out of range');
+for(const m of ['selector','gear','gear_estimate'])assert.equal(L.gearText({stage:'R',gear:-1,gearMode:m}),'R','R never changes');
+{
+    const {ClusterLayers}=require('../apps/custom_cluster/cluster_layers');
+    const c=new ClusterLayers({info(){},warn(){}},null,{on(){},connect(){},close(){},status(){}});
+    c.data={stage:'D',gear:4,gearGuessed:true,speed:50,rpm:2000};
+    c.options=Object.assign({},c.options,{gearDisplay:'gear'});
+    assert.equal(c.gearLabel(),'D');
+    c.options.gearDisplay='gear_estimate'; assert.equal(c.gearLabel(),'D4');
+    c.options.gearDisplay='selector'; c.data.gearGuessed=false; assert.equal(c.gearLabel(),'D');
+    c.options.gearDisplay='gear'; assert.equal(c.gearLabel(),'D4');
+    c.observeVehicle({stage:'D',gear:5,gearGuessed:false,speed:50});
+    assert.equal(c.gearLabel(),'D5','a gear change is taken over without a new rpm/speed sample');
+    assert.equal(c.status().gearLabel,'D5');
+}
 assert.equal(L.infoText(L.SIDES[1],{oil:91.6,coolant:88}),'OIL 92\u00b0  H2O 88\u00b0');
 assert.equal(L.infoText(L.SIDES[1],{oil:NaN}),'OIL --  H2O --');
 // Generated progress shaders: one seg() call per path segment, GLSL float literals.

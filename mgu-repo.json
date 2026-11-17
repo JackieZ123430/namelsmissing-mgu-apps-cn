@@ -208,7 +208,7 @@
       "id": "custom_cluster",
       "kind": "app",
       "title": "Custom Cluster",
-      "version": "0.6.9",
+      "version": "0.6.10",
       "path": "apps/custom_cluster",
       "icon": "icon.png",
       "mguHmi": [
