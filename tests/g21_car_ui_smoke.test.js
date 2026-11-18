@@ -52,7 +52,10 @@ const cfg = { autoEnabled: true, belowTemp: 8, coldDwell: 0, wheelAuto: true,
     wheelMins: 1, seatDriver: false, seatPassenger: false, seatLevel: 3, seatMins: 1 };
 const auto = new ComfortAuto();
 const start = 100000;
-assert.equal(auto.step({ now: start, tempC: -5, tempAt: start, cfg })[0].type, 'ON');
+// Since 0.4.19 OFF is only scheduled after the BDC acknowledged ON.
+const on = auto.step({ now: start, tempC: -5, tempAt: start, cfg })[0];
+assert.equal(on.type, 'ON');
+auto.acknowledge(on, true, start);
 assert.equal(auto.step({ now: start + 60000, tempC: -5, tempAt: start, cfg })[0].type, 'OFF');
 assert.equal(auto.step({ now: start + 61000, tempC: -5, tempAt: start, cfg }).length, 0);
 const long = new ComfortAuto();

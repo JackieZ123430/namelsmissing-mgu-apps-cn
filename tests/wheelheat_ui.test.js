@@ -8,7 +8,7 @@ const app = require('../apps/g21_wheelheat/app.json');
 const main = fs.readFileSync(path.join(__dirname, '../apps/g21_wheelheat/main.js'), 'utf8');
 
 test('WheelHeat autostart uses a single explicit opt-in and honest diagnostic states', () => {
-    assert.equal(app.version, '0.4.20');
+    assert.equal(app.version, '0.5.1');
     assert.equal(app.mguAppStartType, 'autostart');
     assert(!app.settings.some(s => s.key === 'liveControl'));
     assert.equal(app.settings.find(s => s.key === 'autoEnabled').default, false);
@@ -32,4 +32,7 @@ test('WheelHeat autostart uses a single explicit opt-in and honest diagnostic st
     assert(app.screens[0].buttons.some(row => row[0] === 'BTN_QR_REFRESH'));
     assert(app.settings.some(s => s.key === 'minVehicleOffMins'));
     assert(!app.settings.some(s => s.key === 'cycleRepeatMins'));
+    assert(app.screens[0].buttons.some(row => row[0] === 'BTN_DETECT'), 're-detect button');
+    assert.match(main, /E\.applyRoutes\(cfg, ecuProfile\)/, 'planner drops channels the car cannot heat via BDC');
+    assert.match(main, /cycle\.armTest\(\)/, 'one-shot test can be armed while running');
 });

@@ -32,7 +32,7 @@ class StoreBuildTests(TestCase):
             self.assertEqual(self.module.main(["g21_wheelheat"]), 0)
         invoke.assert_called_once()
         manifest = json.loads((SCRIPT.parents[1] / "apps" / "g21_wheelheat" / "app.json").read_text(encoding="utf-8"))
-        patcher.assert_called_once_with(SCRIPT.parents[1], manifest["mguAppStartType"])
+        patcher.assert_called_once_with(SCRIPT.parents[1], manifest["mguAppStartType"], app_id="g21_wheelheat")
 
     def test_unknown_app_rejected_before_build(self):
         with mock.patch.object(self.module.subprocess, "run") as invoke:
