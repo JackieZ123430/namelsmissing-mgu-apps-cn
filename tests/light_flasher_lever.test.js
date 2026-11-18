@@ -106,7 +106,7 @@ test('main wires lever only through the guarded flash path', () => {
     for (const term of ["settings.get('manualFlash')===true", "settings.get('leverTrigger')===true", 'leverScreenOk()', '!guard.reason()', '!flash.running', '!flash.cleanupUnconfirmed'])
         assert.ok(allowed.includes(term), 'leverAllowed lacks ' + term);
     assert.match(src, /startFlash\('lever'\)/);
-    assert.match(src, /flash\.run\(cfg,runAllowed,update\)/);
+    assert.match(src, /flash\.run\(\{\.\.\.cfg,fast:settings\.get\('fastTest'\)===true\},runAllowed,update\)/);
     assert.match(src, /const runAllowed=background\?backgroundRunAllowed:flashAllowed/);
     // Background runs keep the full P/stationary/OEM-off guard, but never with diagnostics open.
     const bg = src.match(/const backgroundRunAllowed=\(\)=>([^;]+);/)[1];

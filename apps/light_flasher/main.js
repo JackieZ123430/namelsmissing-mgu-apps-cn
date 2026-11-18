@@ -9,7 +9,7 @@ const Monitor=require('./background-monitor');
 const Release=require('./release-status');
 const Timing=require('./timing');
 const {LeverTrigger}=require('./lever-trigger');
-const VERSION='0.1.13';
+const VERSION='0.1.14';
 mgu.run({async start(ctx){
  const {ui,settings,log}=ctx, capture=new Capture(),reader=new Reader(ctx.signals,log);
  const monitor=new Monitor(Date.now,ctx.app&&ctx.app.startReason);
@@ -37,11 +37,12 @@ mgu.run({async start(ctx){
  const observeBackground=()=>{monitor.observe(Date.now()-lastLightAt<=2500?{statusMainBeam_headlightFlasher:lastCombined}:null,lightProviderAvailable(),ui.isVisible('MAIN'));persistBackground();};
  const update=()=>{
    const g=guard.snapshot(),c=capture.snapshot(),bg=monitor.snapshot();
+   const fastOk=v=>v===true?'confirmed':v===false?'NOT confirmed':'not checked';
    const timing=Timing.summarize(flash.trace),gaps=timing.startDispatchGaps;
    const release=Release.summarize(flash.trace,flash.cleanupUnconfirmed);
    const returnState=release.locked?'LOCKED: check normal lamps':release.acknowledged?'STOP / default session acknowledged':release.attempted?'return not confirmed':'not tested';
    if(ui.isVisible('MAIN')){
-     let cfgText;try{const cfg=getConfig();cfgText=cfg.label+' | '+cfg.intervalMs+' ms requested | '+cfg.durationMs/1000+' s'}catch(e){cfgText='Invalid settings: select 100 ms or above'}
+     let cfgText;try{const cfg=getConfig();cfgText=(settings.get('fastTest')===true?'FAST TEST | ':'')+cfg.label+' | '+cfg.intervalMs+' ms requested | '+cfg.durationMs/1000+' s'}catch(e){cfgText='Invalid settings: select 100 ms or above'}
      ui.text('FLASH_CONFIG',cfgText);
      ui.text('FLASH_STATUS',(flash.cleanupUnconfirmed?'LOCKED: previous cleanup not confirmed':flash.status)+' | '+(g.blockedBy||'P / stationary')+' | OEM beam '+(lastCombined||'unknown')+(lastError?' | '+lastError:''));
      const lv=lever.snapshot();ui.text('LEVER_STATUS','Lever'+(leverBackground()?' (also closed)':'')+': '+(settings.get('leverTrigger')===true?lv.reason+' | triggers '+lv.triggers+(lv.rejected?' | ignored '+lv.rejected:''):'off (enable in settings)'));
@@ -49,7 +50,7 @@ mgu.run({async start(ctx){
    }
    if(!ui.isVisible('DIAGNOSTICS'))return;
    ui.text('DIAG_STATE','TASU: '+(reader.diag.available?'available':(reader.diag.error||'unavailable'))+' | '+(g.blockedBy||'P / stationary')+' | diagnostics '+(enabled()?'ON':'OFF')+'\nOEM beam '+(lastCombined||'unknown')+' | Background '+(bg.enabled?'ON':'OFF')+' / '+bg.startReason+' | BDC '+(reader.index||'not checked')+'\n'+(lastError?'ERROR: '+lastError:connectionState));
-   ui.text('DIAG_RESULT','Last flash: '+flash.status+'\nReturn: '+returnState+'\n'+(gaps?'START gap '+gaps.minMs+'-'+gaps.maxMs+' ms, mean '+gaps.meanMs+' ms (not optical timing)':'No timing sample yet')+'\n'+(flashExportError?'Auto-save failed: '+flashExportError:flashExport?'Flash log: '+flashExport:'No new flash export'));
+   ui.text('DIAG_RESULT','Last flash: '+flash.status+'\nReturn: '+returnState+'\n'+(gaps?'START gap '+gaps.minMs+'-'+gaps.maxMs+' ms, mean '+gaps.meanMs+' ms (not optical timing)':'No timing sample yet')+(flash.fast?'\nFast test: PWM 0 off L '+fastOk(flash.fast.offVerified.left)+' / R '+fastOk(flash.fast.offVerified.right)+(timing.pwm0OffResponses?', off reply mean '+timing.pwm0OffResponses.meanMs+' ms':'')+(timing.startResponses?', on reply mean '+timing.startResponses.meanMs+' ms':''):'')+'\n'+(flashExportError?'Auto-save failed: '+flashExportError:flashExport?'Flash log: '+flashExport:'No new flash export'));
    ui.text('DIAG_CAPTURE',c.reason+' | Reads '+c.rawCount+' | Errors '+c.failures+' | '+feedbackStatus);
    const f=feedback[feedback.length-1],d=f?Feedback.sampleState(f):null;
    const electrical=d?Object.entries(d.sides).map(([side,x])=>side+' CH8: '+x.highBeam.pwmPercent+'% / '+x.highBeam.currentMa+' mA | CH7: '+x.lowBeam.pwmPercent+'%').join('\n'):'No FLM readback yet';
@@ -94,12 +95,12 @@ mgu.run({async start(ctx){
    flashTask=new Promise(resolve=>{finishAttempt=resolve});
    let task;
    try{
-     const cfg=getConfig();attempt.requested=cfg;
+     const cfg=getConfig();attempt.requested={...cfg,fast:settings.get('fastTest')===true};
      const background=source==='lever'&&leverBackground();attempt.background=background;
      const runAllowed=background?backgroundRunAllowed:flashAllowed;runNeedsMain=!background;
      if(!runAllowed())throw Error('Park securely in P, enable manual flash and switch OEM high beam OFF');
      attempt.outcome='started';
-     task=flash.run(cfg,runAllowed,update);
+     task=flash.run({...cfg,fast:settings.get('fastTest')===true},runAllowed,update);
      await task;
      attempt.outcome='finished';
    }catch(e){attempt.error=String(e.message||e);lastError=attempt.error;attempt.outcome='failed or cancelled';log.warn(lastError)}
@@ -138,7 +139,7 @@ mgu.run({async start(ctx){
    return {app:'light_flasher',version:VERSION,at:new Date().toISOString(),guard:guard.snapshot(),
      bdcIndex:reader.index,identityReply:reader.identityReply,connectionState,lastError,
      tasuAvailable:reader.diag.available,tasuError:reader.diag.error||null,trace:reader.trace.slice(),
-     physicalActuation:flash.trace.some(x=>x.tx.startsWith('3101')),manualFlash:{status:flash.status,trace:flash.trace.slice(),cleanupUnconfirmed:flash.cleanupUnconfirmed,config:flash.config,stepsCompleted:flash.stepsCompleted,elapsedMs:flash.elapsedMs,timing:Timing.summarize(flash.trace),release:Release.summarize(flash.trace,flash.cleanupUnconfirmed)},combinedSignal:lastCombined,capture:capture.snapshot(),flmFeedback:feedback.slice(),decodedFeedback:feedback.map(Feedback.sampleState),overrideReadiness:Feedback.limits,backgroundMonitor:monitor.snapshot(),leverTrigger:lever.snapshot(),feedbackStatus};
+     physicalActuation:flash.trace.some(x=>x.tx.startsWith('3101')),manualFlash:{status:flash.status,trace:flash.trace.slice(),cleanupUnconfirmed:flash.cleanupUnconfirmed,config:flash.config,fastTest:flash.fast,stepsCompleted:flash.stepsCompleted,elapsedMs:flash.elapsedMs,timing:Timing.summarize(flash.trace),release:Release.summarize(flash.trace,flash.cleanupUnconfirmed)},combinedSignal:lastCombined,capture:capture.snapshot(),flmFeedback:feedback.slice(),decodedFeedback:feedback.map(Feedback.sampleState),overrideReadiness:Feedback.limits,backgroundMonitor:monitor.snapshot(),leverTrigger:lever.snapshot(),feedbackStatus};
  }
  function writeReport(file,report){
    fs.writeFileSync(file+'.tmp',JSON.stringify(report,null,2));fs.renameSync(file+'.tmp',file);

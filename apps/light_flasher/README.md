@@ -1,4 +1,11 @@
-# Light Flasher 0.1.13
+# Light Flasher 0.1.14
+
+## 0.1.14 – Test option: fast mode
+
+New setting "Test: fast mode (no 150 ms gap, PWM 0 instead of STOP between pulses)", default OFF; applies to button and lever runs. Background: BimmerLight uses the same FLM_KANAL routine; its shorter intervals come mainly from a direct adapter connection and from sending STOP only at the end. Our 512 ms START gap at 100 ms requested consists of START and STOP round trips over TASU plus the fixed 150 ms dark gap.
+
+In fast mode a side is switched off by restarting FLM_KANAL with PWM 0 (`31 01 A5 4B 08 00 01`) instead of `31 02 A5 4B`, and the fixed 150 ms gap is dropped. The first OFF per side is read back via D6DB; unless channel 8 shows 0 % / 0 mA the run stops immediately with STOP and default session ("fast test unusable"). Rejected PWM-0 or ON restarts (e.g. NRC 0x22/0x24 while the routine is running) also stop the run. Unchanged: ECU timeout 1 s per command, identity and high-beam-OFF preflight, P/stationary/OEM-off guard, final STOP + `10 01` on every touched side, cleanup lock. The diagnostics page shows whether PWM 0 was confirmed as OFF per side and the mean ON/OFF reply times; the JSON contains `fastTest` and `timing.pwm0OffResponses`. Expected: roughly 200–250 ms per change (estimate); 100 ms is not reachable over TASU. Not yet tested in the vehicle; compare the START gap with fast mode off and on.
+
 
 ## 0.1.13 – Lever trigger also with the app closed (autostart)
 
