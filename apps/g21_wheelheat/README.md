@@ -15,37 +15,56 @@ Automatically control the seat and steering-wheel heating on a compatible BMW. T
 | Diagnostics | View heating commands, ECU responses and session logs in a scrollable console. |
 | QR logs | Export current-session diagnostic information locally using QR codes. |
 
-## Control-unit detection (beta 0.5.x)
+## Control-unit detection (0.5.x, experimental)
 
 Heating Comfort no longer assumes the G21 layout. Once the diagnostic connection is up, it reads
-the standard BMW identification `22 F150` (read-only, no VIN) from these addresses:
+the standard BMW identification `22 F150` (read-only, no VIN, no serial numbers) from these addresses:
 
 | Address | Control unit | Used for |
 | --- | --- | --- |
 | `0x40` | BDC | steering wheel `D074`, seat heating `E432` / `E430` on cars without seat modules |
-| `0x6D` / `0x6E` | SMFA / SMBF (seat modules) | detection only |
-| `0x78` | IHKA | detection only |
+| `0x6D` / `0x6E` | SMFA / SMBF (seat modules) | detection and read-only seat level `D714` |
+| `0x78` | IHKA | detection and read-only seat level `D8DB` (cross-check) |
 
-The result decides the route for each channel:
+Route per channel (since 0.5.2):
 
-- **BDC**: the channel works as before (G21 and other cars without seat modules).
-- **Seat module**: the car has separate seat modules (for example a G05 with comfort seats). The BDC seat
-  path is not used there, so the channel is left out of the automatic plan instead of failing eight
-  times. Control through the seat modules is not supported yet.
-- **Not available** (NRC 0x31) is left out as well. Unclear results keep the channel; the normal
-  readback check still decides every write.
+| Route | When | Automatic heating |
+| --- | --- | --- |
+| **BDC** | BDC seat DID readable **and** the matching seat module confirmed absent | yes (normal BDC readback gate) |
+| **Seat module** | seat module answers | no, read-only display |
+| **Conflict** | BDC seat DID readable **and** seat module answers | no (architecture not confirmed) |
+| **Unresolved** | seat module not identified yet, or BDC seat DID not readable | no, detection retries |
+| **Not available** | NRC 0x31 | no |
+
+- A missing reply is not proof that a control unit is missing. A seat module counts as absent only
+  after it stayed silent in two detection runs at least 20 s apart while the BDC answered. A module
+  that answered once stays "present". Busy/offline errors never count.
+- Unresolved routes are retried: up to 5 runs per ignition (20–30 s apart), then every 10 min; a new
+  ignition starts again. Confirmed-absent modules are not polled again.
+- On the first start after install or after a BDC change, the one-time plan waits up to 60 s after
+  ignition ON for the seat routes (two detection runs). Afterwards it plans with what is known.
+- Seat ON/EXTEND is checked against the route again right before every write. If a route stops being
+  verified during a session, the seat is taken out of the plan and our own acknowledged ON is undone
+  with a BDC OFF. OFF is never blocked by the route.
+- The steering wheel is only left out on NRC 0x31; otherwise the normal BDC readback gate decides.
+- Seat modules and IHKA are **read-only**: no 0x2E, no routines, no session change.
 
 The profile is saved in the app settings. On the next start only the BDC identification is read
-again; if it matches, the saved profile is reused, otherwise everything is detected again.
-Diagnostics → **RE-DETECT ECUs** forces a new detection.
+again; a complete profile of the same BDC is reused, an incomplete one is completed, a different BDC
+starts from scratch. 0.5.1 profiles are migrated and always re-detected (0.5.1 could treat a silent
+seat module as missing). Diagnostics → **RE-DETECT ECUs** forces a new detection.
 
-Since 0.5.1 the identities are named (e.g. `BDC_G05`, `FAS_G11`, `IHKA_G05`). For seats on a seat
-module the Diagnostics tab shows the actual level read-only from the seat module (`22 D714`) and,
-as a cross-check, from the IHKA (`22 D8DB`). The DIDs come from the SGBDs, see
-[`docs/sgbd-seat-heating.md`](../../docs/sgbd-seat-heating.md); they are not yet confirmed on a car. Detection can only remove channels,
-never allow a write.
+Diagnostics tab: the steering wheel is read from the BDC (`D074`); BDC seat DIDs are only read where
+the route can use them. Seats on a seat module show the module's own `D714` value; the IHKA line
+shows `D8DB` left/right separately and compares it with the seat modules without guessing the driver
+side. Missing, stale, invalid or unreadable values are never shown as OFF. Variants other than
+`FAS_G11`, `BFS_G11` and `IHKA_G05` are captured raw only. The QR log contains the last 10 complete
+`D714` / `D8DB` replies (ECU address, SGBD index/variant, state, decoded values if valid).
 
-The "Test next ignition ON" switch now also works while the app is already running, and it applies
+The DIDs come from the SGBDs, see [`docs/sgbd-seat-heating.md`](../../docs/sgbd-seat-heating.md).
+**None of this is confirmed on a real car yet.** A positive BDC ACK does not prove physical heating.
+
+The "Test next ignition ON" switch also works while the app is already running, and it applies
 to exactly one ignition.
 
 ## Install and enable

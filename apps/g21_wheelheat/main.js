@@ -10,7 +10,6 @@ const { SafeDiag, bytes } = require('./safe_diag');
 const QR = require('./qr_log');
 const Cycle = require('./cycle_policy');
 const E = require('./ecu_profile');
-const APP_VERSION = require('./app.json').version;
 
 // Settings is automatically provided as ONE native tab by the renderer.
 const TABS = ['Comfort', 'Diagnostics', 'Log', 'QR Log'];
@@ -152,6 +151,10 @@ mgu.run({
                 const marker = Number(ctx.settings.get('_autoCycleAt'));
                 qrReport = QR.createReport(ctx, {
                     events, eventWriteError, sessionStartedAt, sessionReason,
+                    seatReads: seatHistory.map(snap => ({ at: snap.at,
+                        lines: ['SMFA', 'SMBF', 'IHKA'].filter(id => snap[id])
+                            .map(id => E.measurementLine(id, snap[id])),
+                        comparison: snap.comparison })),
                     state: {
                         appStartedAt: new Date(appStartedAt).toISOString(),
                         processStartReason: startReason, firstUiAt: firstUiAt ?
@@ -181,7 +184,8 @@ mgu.run({
                         speedFresh: ctl.motionKnown, bdcMessage: ctl.info,
                         lastBdcWriteAt: ctl.lastWriteAt, bdcReadbacks: ctl.readbacks,
                         oneShotTestArmed: cycle.testBypass,
-                        ecuProfileState: ecuState, ecuProfile, seatModuleReads: moduleReads,
+                        ecuProfileState: ecuState, ecuProfile,
+                        seatSourceComparison: seatSources && seatSources.comparison,
                     },
                 });
                 qrPage = 0;
@@ -193,6 +197,13 @@ mgu.run({
                 qrError = String(e && e.message || e);
                 ctx.log.warn('QR diagnostic export failed: ' + qrError);
             }
+        }
+        // Include the current measurement: one read-only refresh, then build.
+        // If the channel is busy or offline, build from what is there.
+        function freshQrReport() {
+            if (!ctl.online || statusBusy || busy) { buildQrReport(); return; }
+            refreshReadbacks().catch(e => ctx.log.warn('QR refresh: ' + e))
+                .then(() => { if (tab === 3) buildQrReport(); });
         }
         function nextQrPage() {
             if (!qrReport) { buildQrReport(); return; }
@@ -210,10 +221,17 @@ mgu.run({
         // TASU is online, stored again for the next start.
         let ecuProfile = E.load(ctx.settings.get(E.PROFILE_KEY));
         let ecuState = ecuProfile ? 'STORED (not yet verified)' : 'NOT DETECTED';
-        let ecuBusy = false, ecuDone = false, ecuAttemptAt = 0, ecuForce = false;
+        let ecuBusy = false, ecuDone = false, ecuAttemptAt = 0, ecuForce = false, ecuAttempts = 0;
+        let lastRouteNote = '';
         let lastSkipNote = '';
-        const moduleReads = {}; // read-only seat-module state, key -> E.readModuleSeat()
-        record('ECU PROFILE', ecuProfile ? 'loaded: ' + E.summary(ecuProfile) : 'none stored');
+        // Read-only seat sources (SMFA/SMBF D714, IHKA D8DB): latest snapshot
+        // plus a bounded history for the QR export (manual level changes).
+        let seatSources = null, mismatchStreak = 0;
+        const seatHistory = [];
+        const SEAT_HISTORY_MAX = 10;
+        record('ECU PROFILE', ecuProfile ? (ecuProfile.migratedFrom ?
+            'migrated 0.5.1 profile, re-detection required: ' : 'loaded: ') + E.summary(ecuProfile) : 'none stored');
+        if (ecuProfile && ecuProfile.migratedFrom) ecuState = 'MIGRATED (re-detecting)';
         ctx.settings.onChange((key, value) => {
             // The one-shot test must also work when the app is already running
             // (head unit stays up between ignitions). Consume the switch at
@@ -243,7 +261,7 @@ mgu.run({
             if (Number.isInteger(i) && i >= 0 && i < TABS.length) {
                 const enteredQr = tab !== 3 && i === 3;
                 tab = i;
-                if (enteredQr) buildQrReport();
+                if (enteredQr) freshQrReport();
                 if (tab === 1) refreshReadbacks().catch(e => { ctl.info = 'BDC read error: ' + e.message; });
             }
         };
@@ -309,6 +327,7 @@ mgu.run({
                 } else if (observed.transition === 'on') {
                     sawVehicleOn = true;
                     if (!ecuProfile || !ecuProfile.complete) { ecuDone = false; ecuAttemptAt = 0; }
+                    ecuAttempts = 0;
                     if (cycle.canStart()) auto.rearm();
                     record('VEHICLE ON', observed.reason +
                         '; app started via ' + startReason +
@@ -361,6 +380,16 @@ mgu.run({
         // response remains unverified until an on-car test.
         async function sendIntent(intent) {
             if (intent.type === 'OFF' && !acknowledged.has(intent.device)) return false;
+            // Seat ON/EXTEND only on a verified BDC route (checked again right
+            // before the write). OFF of our own acknowledged ON is never blocked.
+            const routeOk = () => intent.type === 'OFF' || E.allows(ecuProfile, intent.device);
+            if (!routeOk()) {
+                intent.retryable = false;
+                lastAction = intent.device + ' ' + intent.type + ': NOT sent (route ' +
+                    E.routeLabel(ecuProfile, E.DEVICE_KEY[intent.device]) + ').';
+                record('BLOCK', lastAction);
+                return false;
+            }
             const generation = cancelGeneration;
             const ignition = cycle.onAt;
             intent.retryable = false;
@@ -418,7 +447,7 @@ mgu.run({
                 record('BLOCK', lastAction);
                 return false;
             }
-            const stillAllowed = () => permitted() && ctl.online && ctl.motionKnown &&
+            const stillAllowed = () => routeOk() && permitted() && ctl.online && ctl.motionKnown &&
                 cycle.mode === 'on' && cycle.onAt === ignition && startAllowed() && (intent.type === 'OFF' ||
                     (generation === cancelGeneration && cycle.mayContinue()));
             const attemptWrite = async attempt => {
@@ -498,7 +527,12 @@ mgu.run({
             if (statusBusy || busy || !ctl.online) return;
             statusBusy = true;
             try {
-                for (const did of [B.DID_HEAT, B.DID_SEAT_DRIVER, B.DID_SEAT_PASSENGER]) {
+                // D074 always; BDC seat DIDs only where the route can use them
+                // (no pointless NRC 0x22 reads on cars with seat modules).
+                const dids = [B.DID_HEAT];
+                if (E.readsBdcSeat(ecuProfile, 'driver')) dids.push(B.DID_SEAT_DRIVER);
+                if (E.readsBdcSeat(ecuProfile, 'passenger')) dids.push(B.DID_SEAT_PASSENGER);
+                for (const did of dids) {
                     if (!ctl.online) break;
                     await ctl.read(did);
                     const reply = ctl.readbacks[did];
@@ -510,19 +544,19 @@ mgu.run({
                             reply.ok ? reply.raw : reply.error);
                     }
                 }
-                // Seats handled by a seat module: read the module (and IHKA)
-                // instead of the BDC path. Read-only, never a write gate.
-                for (const key of ['driver', 'passenger']) {
-                    if (!ctl.online || !ecuProfile) break;
-                    const r = ecuProfile.routes[key];
-                    if (!r || r.route !== 'seat-module') continue;
-                    const m = await E.readModuleSeat((addr, did) => ctl.probe(addr, did), ecuProfile, key);
-                    if (!m) continue;
-                    moduleReads[key] = m;
-                    record('READ ' + m.module + ' 0xD714', m.state === 'ok' ? m.raw +
-                        (m.decoded ? ' (level ' + m.decoded.level + ')' : ' (layout unknown for ' + (m.sgbd || 'variant') + ')') :
-                        m.state === 'nrc' ? 'NRC 0x' + m.nrc.toString(16).toUpperCase() : 'no reply');
-                    if (m.ihkaLevel !== null) record('READ IHKA 0xD8DB', E.CHANNELS[key].label + ' level ' + m.ihkaLevel);
+                // Installed seat modules / IHKA: read-only D714 per module and
+                // ONE shared D8DB snapshot. Never a write gate.
+                if (ctl.online && ecuProfile && ['SMFA', 'SMBF', 'IHKA'].some(id =>
+                    ecuProfile.ecus[id] && ecuProfile.ecus[id].presence === 'present')) {
+                    const snap = await E.readSeatSources((addr, did) => ctl.probe(addr, did), ecuProfile);
+                    seatSources = snap;
+                    seatHistory.push(snap);
+                    while (seatHistory.length > SEAT_HISTORY_MAX) seatHistory.shift();
+                    for (const id of ['SMFA', 'SMBF', 'IHKA'])
+                        if (snap[id]) record('READ ' + id, E.measurementLine(id, snap[id]).slice(9));
+                    mismatchStreak = snap.comparison.verdict === 'differs' ? mismatchStreak + 1 : 0;
+                    record('SEAT SOURCES', snap.comparison.verdict + ': ' + snap.comparison.detail +
+                        (mismatchStreak >= 2 ? ' (differs in ' + mismatchStreak + ' reads in a row)' : ''));
                 }
                 statusAt = Date.now();
             } finally { statusBusy = false; }
@@ -544,13 +578,24 @@ mgu.run({
                 return false;
             }
         }
+        // Retry policy for unresolved routes: at most ECU_ATTEMPTS_PER_IGNITION
+        // runs per ignition, >= 30 s apart; afterwards every 10 min. A new
+        // verified ignition resets the counter. Confirmed-absent modules are
+        // not polled again (see ecu_profile.detect).
+        const ECU_RETRY_MS = 30000, ECU_SLOW_RETRY_MS = 600000, ECU_ATTEMPTS_PER_IGNITION = 5;
         async function ensureProfile() {
-            if (ecuDone || ecuBusy || busy || statusBusy || !ctl.online) return;
-            if (!ecuForce && Date.now() - ecuAttemptAt < 30000) return;
+            if ((ecuDone && !ecuForce) || ecuBusy || busy || statusBusy || !ctl.online) return;
+            // The 2nd run confirms silent seat modules (needs >= 20 s gap).
+            const spacing = ecuAttempts >= ECU_ATTEMPTS_PER_IGNITION ? ECU_SLOW_RETRY_MS :
+                ecuAttempts === 1 ? E.ABSENT_GAP_MS + 500 : ECU_RETRY_MS;
+            if (!ecuForce && Date.now() - ecuAttemptAt < spacing) return;
             ecuBusy = statusBusy = true;
             ecuAttemptAt = Date.now();
+            ecuAttempts++;
+            const forced = ecuForce;
             try {
-                if (ecuProfile && !ecuForce) {
+                let previous = null;
+                if (ecuProfile && !forced) {
                     const id = E.classify(E.ID_DID, await ctl.probe(0x40, E.ID_DID));
                     const index = id.state === 'ok' && id.payload.length >= 3 ?
                         id.payload.slice(0, 3).map(n => n.toString(16).toUpperCase().padStart(2, '0')).join('') : null;
@@ -561,26 +606,33 @@ mgu.run({
                         record('ECU PROFILE', decision.reason + ': ' + E.summary(ecuProfile));
                         return;
                     }
-                    record('ECU PROFILE', 'redetecting: ' + decision.reason);
+                    if (decision.merge) previous = ecuProfile;
+                    record('ECU PROFILE', 'detecting: ' + decision.reason);
                 }
                 ecuState = 'DETECTING ...';
                 const found = await E.detect((addr, did) => ctl.probe(addr, did),
-                    { appVersion: APP_VERSION });
+                    { appVersion: ctx.spec && ctx.spec.version || null, previous });
                 ecuForce = false;
                 if (!found.ecus.BDC.present) {
                     ecuState = ecuProfile ? 'STORED (BDC not reachable)' : 'NOT DETECTED (BDC not reachable)';
-                    record('ECU PROFILE', 'BDC 0x40 did not answer; retry in 30s');
+                    record('ECU PROFILE', 'BDC 0x40 did not answer; retry later');
                     return;
                 }
                 ecuProfile = found;
                 const saved = saveProfile(found);
                 ecuDone = found.complete;
-                ecuState = (found.complete ? 'DETECTED' : 'DETECTED (incomplete, will retry)') +
+                ecuState = (found.complete ? 'DETECTED' : 'DETECTED, ROUTES UNRESOLVED (will retry)') +
                     (saved ? '' : ' / NOT SAVED');
-                record('ECU PROFILE', 'detected: ' + E.summary(found) + '; saved=' + saved);
-                for (const key of Object.keys(E.CHANNELS))
-                    record('ECU ROUTE', E.CHANNELS[key].label + ': ' + found.routes[key].route +
-                        ' (' + found.routes[key].reason + ')');
+                record('ECU PROFILE', 'detected (run ' + ecuAttempts + '): ' + E.summary(found) + '; saved=' + saved);
+                const note = Object.keys(E.CHANNELS).map(key => E.CHANNELS[key].label + ': ' +
+                    found.routes[key].route + ' (' + found.routes[key].reason + ')').join(' | ');
+                if (note !== lastRouteNote) {
+                    for (const key of Object.keys(E.CHANNELS))
+                        record('ECU ROUTE', E.CHANNELS[key].label + ': ' + found.routes[key].route +
+                            (found.routes[key].allowsAuto ? ' [automatic allowed]' : ' [no automatic heating]') +
+                            ' (' + found.routes[key].reason + ')');
+                    lastRouteNote = note;
+                }
             } catch (e) {
                 ecuState = 'DETECTION ERROR';
                 record('ECU PROFILE ERROR', String(e && (e.message || e)));
@@ -591,6 +643,7 @@ mgu.run({
             if (ecuBusy) return;
             ecuForce = true;
             ecuDone = false;
+            ecuAttempts = 0;
             ecuState = 'DETECTION REQUESTED';
             record('ECU PROFILE', 'manual re-detection requested');
         }
@@ -600,11 +653,25 @@ mgu.run({
             busy = true;
             try {
                 const now = Date.now(), cfg = config(), reading = tempReading(now);
+                const wantedSeats = { driver: cfg.seatDriver, passenger: cfg.seatPassenger };
                 const skipped = E.applyRoutes(cfg, ecuProfile);
                 const skipNote = skipped.join('; ');
                 if (skipNote !== lastSkipNote) {
-                    if (skipNote) record('SKIP', skipNote + ' -> not planned, no BDC request');
+                    if (skipNote) record('SKIP', skipNote + ' -> not planned, no request');
                     lastSkipNote = skipNote;
+                }
+                // Profile changed during a session: drop seat starts/extensions
+                // that are no longer allowed; undo our own acknowledged ON via
+                // the same BDC path (OFF is never route-blocked).
+                for (const name of ['Driver seat', 'Passenger seat']) {
+                    if (!auto.active.has(name) || E.allows(ecuProfile, name)) continue;
+                    auto.active.delete(name);
+                    if (acknowledged.has(name)) {
+                        pendingStops.add(name);
+                        stopAttempts.set(name, 0);
+                    }
+                    record('ROUTE CHANGED', name + ': ' + E.routeLabel(ecuProfile, E.DEVICE_KEY[name]) +
+                        '; automatic seat stopped' + (acknowledged.has(name) ? ', BDC OFF queued' : ''));
                 }
                 const ignition = cycle.onAt;
                 cfg.startUntil = ignition + START_WINDOW_MS;
@@ -630,7 +697,21 @@ mgu.run({
                 // moving as long as speed data are fresh and BDC accepts writes.
                 const enabledForPlanner = cfg.autoEnabled && cycle.mayContinue() &&
                     (canStart || auto.active.size > 0);
+                // First start after install / BDC change: give the read-only
+                // detection a short, bounded chance (2 runs, max. 60 s after
+                // ignition ON) to settle a selected seat route before the
+                // one-shot plan is made. Afterwards plan with what is known.
+                const routePending = key => {
+                    const r = ecuProfile && ecuProfile.routes[key];
+                    return !r || r.route === 'unresolved' || r.route === 'unknown';
+                };
+                const awaitingRoutes = !auto.fired && auto.active.size === 0 && cfg.autoEnabled &&
+                    cycle.mode === 'on' && cycle.canStart() && ecuAttempts < 2 &&
+                    now < cycle.onAt + 60000 && ctl.online &&
+                    ((wantedSeats.driver && routePending('driver')) ||
+                        (wantedSeats.passenger && routePending('passenger')));
                 const plannerStatus = !cfg.autoEnabled ? 'OFF (setting)'
+                    : awaitingRoutes ? 'WAITING FOR CONTROL-UNIT DETECTION'
                     : cycle.mode !== 'on' ? 'WAITING FOR VERIFIED VEHICLE ON'
                     : !cycle.mayContinue() ? 'MANUALLY CANCELLED THIS DRIVE'
                     : !auto.fired && !cycle.canStart() ? 'PARKING TIME NOT MET / SAME DRIVE'
@@ -649,6 +730,7 @@ mgu.run({
                         offMinutes() + 'm; vehicle=' + cycle.mode);
                     lastPlannerStatus = plannerStatus;
                 }
+                if (awaitingRoutes) return;
                 const wasFired = auto.fired;
                 const pendingBefore = Array.from(auto.active).filter(([, s]) => s.pending).map(([name]) => name);
                 const intents = auto.step({ now, tempC: reading.value, tempAt: reading.at,
@@ -708,7 +790,7 @@ mgu.run({
         ctx.ui.onClick('BTN_LOG_UP', () => { if (tab === 2) consoleMove(12); });
         ctx.ui.onClick('BTN_LOG_DOWN', () => { if (tab === 2) consoleMove(-12); });
         ctx.ui.onClick('BTN_LOG_LATEST', () => { if (tab === 2) consoleOffset = 0; });
-        ctx.ui.onClick('BTN_QR_REFRESH', () => { if (tab === 3) buildQrReport(); });
+        ctx.ui.onClick('BTN_QR_REFRESH', () => { if (tab === 3) freshQrReport(); });
         ctx.ui.onClick('BTN_DETECT', redetect);
         if (typeof ctx.onTap === 'function') ctx.onTap((x, y) => {
             if (tab === 2 && y >= 121 && y <= 169) {
@@ -716,7 +798,7 @@ mgu.run({
                 else if (x >= 1102 && x < 1288) consoleMove(-12);
                 else if (x >= 1298 && x < 1537) consoleOffset = 0;
             } else if (tab === 3 && x >= 1275 && x < 1515 && y >= 112 && y <= 165)
-                buildQrReport();
+                freshQrReport();
             else if (tab === 1 && x >= 1236 && x < 1546 && y >= 112 && y <= 165)
                 redetect();
         });
@@ -755,12 +837,19 @@ mgu.run({
             G.frame(cv, t, TABS, tab,
                 [{ text: auto.active.size ? 'AUTO SCHEDULED' :
                     startReady ? 'AUTO READY' : 'AUTO NOT READY', color: t.dim }]);
-            const blocked = key => {
-                const r = ecuProfile && ecuProfile.routes[key];
-                return r && (r.route === 'seat-module' || r.route === 'unavailable');
+            // configured -> skipped (route) -> pending -> BDC ACK. An ACK is not
+            // proof of physical heating.
+            const blocked = key => !E.allows(ecuProfile, key);
+            const planText = (key, on, value) => !on ? 'Off' : blocked(key) ?
+                'Skipped: ' + E.routeLabel(ecuProfile, key) : value;
+            const confirmText = (device, key, on) => {
+                if (!on) return 'Off';
+                if (blocked(key)) return 'skipped (' + E.routeLabel(ecuProfile, key) + ')';
+                if (acknowledged.has(device)) return 'BDC ACK (heat not verified)';
+                const a = auto.active.get(device);
+                if (a && a.pending) return 'start pending';
+                return 'configured';
             };
-            const planText = (key, on, value) => blocked(key) && on ?
-                'Skipped: ' + E.routeLabel(ecuProfile, key).replace(' (automatic control not supported yet)', '') : on ? value : 'Off';
             if (tab === 0) {
                 G.panel(cv, t, 24, 62, 743, 445, 'Automatic heating');
                 text(cv, status, 54, 148, 32, auto.active.size ? t.warn : t.accent, { font: 'bold' });
@@ -781,12 +870,12 @@ mgu.run({
                 G.panel(cv, t, 788, 62, 788, 445, 'Heating overview');
                 text(cv, 'BDC  ' + (ctl.online ? 'CONNECTED' : 'UNAVAILABLE'), 820, 149, 29,
                     ctl.online ? t.accent : t.warn, { font: 'bold' });
-                text(cv, 'Steering wheel: ' + (c.wheelAuto ? c.wheelMins + ' min selected' : 'Off'),
-                    820, 219, 26, t.text);
-                text(cv, 'Driver seat: ' + (c.seatDriver ? c.seatMins + ' min / level ' + c.seatLevel : 'Off'),
-                    820, 276, 26, t.text);
-                text(cv, 'Passenger seat: ' + (c.seatPassenger ? c.seatMins + ' min / level ' + c.seatLevel : 'Off'),
-                    820, 333, 26, t.text);
+                text(cv, ('Steering wheel: ' + confirmText('Steering wheel', 'wheel', c.wheelAuto)).slice(0, 52),
+                    820, 219, 24, t.text);
+                text(cv, ('Driver seat: ' + confirmText('Driver seat', 'driver', c.seatDriver)).slice(0, 52),
+                    820, 276, 24, t.text);
+                text(cv, ('Passenger seat: ' + confirmText('Passenger seat', 'passenger', c.seatPassenger)).slice(0, 52),
+                    820, 333, 24, t.text);
                 cv.fillRect(820, 356, 710, 1, '#2e4052');
                 text(cv, 'Remaining scheduled time (STOP button cancels)', 820, 406, 22, t.dim);
                 text(cv, 'Wheel ' + auto.remaining('Steering wheel', now) + 's   Seats ' +
@@ -795,21 +884,37 @@ mgu.run({
                 if (ctx.settings.saveError)
                     text(cv, 'Settings could not be saved; see log', 820, 482, 20, t.warn);
             } else if (tab === 1) {
-                G.panel(cv, t, 24, 62, 1552, 445, 'Actual BDC read-back (read-only)');
-                text(cv, 'ECU 0x40   Service 22   Refresh: Action   Unavailable is not OFF',
+                G.panel(cv, t, 24, 62, 1552, 445, 'Actual read-back (read-only)');
+                text(cv, 'BDC 0x40 / seat modules / IHKA   Service 22   Unavailable is not OFF',
                     54, 138, 24, t.text);
+                text(cv, statusBusy ? 'Reading ...' : 'Last read: ' + (statusAt ?
+                    Math.round((now - statusAt) / 1000) + 's ago' : 'not yet'), 1236, 186, 19, t.dim);
                 cv.fillRect(1236, 112, 310, 40, '#284354');
                 text(cv, ecuBusy ? 'DETECTING ...' : 'RE-DETECT ECUs', 1256, 140, 21, t.text);
+                // Seat with an installed seat module: show the module's own
+                // D714 value. Never OFF unless a fresh, valid level 0 was read.
+                const moduleText = id => {
+                    const m = seatSources && seatSources[id];
+                    if (!m || now - m.at > 30000) return ['No current ' + id + ' reading', t.warn];
+                    if (m.state === 'nrc') return ['Unavailable (' + id + ' NRC ' + m.nrc.toString(16).toUpperCase() + ')', t.warn];
+                    if (m.state !== 'ok') return ['No reply from ' + id, t.warn];
+                    if (!m.decoded) return [id + ': raw only (' + (m.sgbd || 'unknown variant') + ')', t.warn];
+                    const lvl = m.decoded.level;
+                    return [(lvl ? 'ON  |  Level ' + lvl : 'OFF') + '  (' + id + ' D714' +
+                        (m.decoded.complete ? '' : ', partial') + ')', lvl ? t.accent : t.text];
+                };
                 const readRow = (label, did, y, seat, key) => {
-                    if (blocked(key)) {
-                        const m = moduleReads[key];
-                        const fresh = m && now - m.at <= 30000;
-                        const level = fresh && m.decoded ? m.decoded.level :
-                            fresh && m.ihkaLevel !== null ? m.ihkaLevel : null;
+                    const r = ecuProfile && ecuProfile.routes[key];
+                    const mod = r && r.module && ecuProfile.ecus[r.module];
+                    if (seat && mod && mod.presence === 'present') {
+                        const [value, colour] = moduleText(r.module);
                         text(cv, label, 54, y, 25, t.text);
-                        text(cv, level !== null ?
-                            (level ? 'ON  |  Level ' + level : 'OFF') + ' (' + m.module + ', read-only)' :
-                            E.routeLabel(ecuProfile, key), 665, y, 23, level ? t.accent : level === 0 ? t.text : t.warn);
+                        text(cv, value, 665, y, 23, colour);
+                        return;
+                    }
+                    if (seat && !E.readsBdcSeat(ecuProfile, key)) {
+                        text(cv, label, 54, y, 25, t.text);
+                        text(cv, E.routeLabel(ecuProfile, key), 665, y, 23, t.warn);
                         return;
                     }
                     const entry = ctl.readbacks[did];
@@ -836,8 +941,16 @@ mgu.run({
                 text(cv, ('Control units: ' + ecuState + '   ' +
                     (ecuProfile ? E.summary(ecuProfile).split(' || ')[0] : '')).slice(0, 118),
                     54, 400, 21, ecuProfile ? t.text : t.warn);
-                text(cv, statusBusy ? 'Reading BDC ...' : 'Last ECU read: ' + (statusAt ?
-                    Math.round((now - statusAt) / 1000) + 's ago' : 'not yet'), 54, 448, 22, t.dim);
+                const ih = seatSources && seatSources.IHKA && now - seatSources.IHKA.at <= 30000 ? seatSources.IHKA : null;
+                const ihText = !ih ? (ecuProfile && ecuProfile.ecus.IHKA && ecuProfile.ecus.IHKA.presence === 'present' ?
+                    'IHKA D8DB: no current reading' : 'IHKA: not used') :
+                    ih.state !== 'ok' ? 'IHKA D8DB: ' + (ih.state === 'nrc' ? 'NRC ' + ih.nrc.toString(16).toUpperCase() : 'no reply') :
+                    !ih.decoded ? 'IHKA D8DB: raw only (' + (ih.sgbd || 'unknown variant') + ')' :
+                    'IHKA D8DB seat heat  left ' + (ih.decoded.left === null ? '?' : ih.decoded.left) +
+                    '  right ' + (ih.decoded.right === null ? '?' : ih.decoded.right) +
+                    '   |   ' + seatSources.comparison.verdict + ': ' + seatSources.comparison.detail;
+                text(cv, ihText.slice(0, 120), 54, 448, 21,
+                    ih && seatSources.comparison.verdict === 'differs' && mismatchStreak >= 2 ? t.warn : t.dim);
                 text(cv, 'Outside sensor: ' + (outside.raw === null ? 'unavailable' :
                     'raw ' + outside.raw + ' -> ' + outside.value.toFixed(1) + ' °C') +
                     '   |   start threshold ' + c.belowTemp + ' °C',

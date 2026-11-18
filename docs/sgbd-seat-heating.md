@@ -80,7 +80,7 @@ Standheizung, nicht zur Sitzheizung.
 | 19 | `STAT_KLIMA_SH_VORN_LINKS_STUFE_WERT` | Stufe 0…3, 255 = ungültig |
 | 20 | `STAT_KLIMA_SH_VORN_RECHTS_STUFE_WERT` | Stufe 0…3, 255 = ungültig |
 | 21 / 22 | `STAT_KLIMA_SL_VORN_LINKS/RECHTS_STUFE_WERT` | Sitzlüftung 0…3 |
-| 24 | `STAT_KLIMA_SH_FKA_RECHTS_STUFE_WERT` | Fond rechts (Byte 23 ist laut SGBD Sitzlüftung) |
+| 23 / 24 | `STAT_KLIMA_SH_FKA_LINKS/RECHTS_STUFE_WERT` | Fond links/rechts (bei Byte 23 nennt der INFO-Text der SGBD „Sitzlüftung“, der Name „SH“ — widersprüchlich, nicht verwendet) |
 
 Links/rechts = Fahrer/Beifahrer nur bei Linkslenker. Das ist vermutlich die Quelle der ISTA-Anzeige
 „Sitzheizung vorne links/rechts“ aus Issue #2.
@@ -132,6 +132,13 @@ Verwandte Optionen:
 Offen: Ob die Automatik am G05 mit Sitzmodulen die Sitze tatsächlich schaltet (der BDC fordert an,
 SMFA/SMBF führen aus), ist nicht belegt; BimmerCode bietet die Headunit-Option ausdrücklich auch für
 `x5g` an. Codierung ist Sache des Nutzers (BimmerCode/E-Sys), die App codiert nichts.
+
+## Validierung in Heating Comfort (ab 0.5.2)
+
+Geprüft gegen `fas_g11.prg` / `ihka_g05.prg` (alle Felder `unsigned char` bzw. `signed char`, je 1 Byte):
+`D714` 8 Byte — Stufe 0…3 (255 ungültig), Temperaturen −40…127 °C (−128 ungültig), PWM 0…100 % (255
+ungültig); `D8DB` 28 Byte — Byte 19/20 Stufe 0…3 (255 ungültig). Kürzere Antworten oder ungültige
+Teilwerte werden als „partial“ gekennzeichnet; eine ungültige Stufe wird nie als Wert angezeigt.
 
 ## Folgerung für Heating Comfort
 
