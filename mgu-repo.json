@@ -251,7 +251,7 @@
       "id": "light_show",
       "kind": "app",
       "title": "Light Show",
-      "version": "0.3.4",
+      "version": "0.4.5",
       "path": "apps/light_show",
       "icon": "icon.png",
       "mguHmi": [
@@ -264,7 +264,21 @@
         ],
         "sdk": "oap-sdk",
         "output": "dist/{id}@{version}.tgz"
+      },
+      "requires": {
+        "mgu-light-net": "0.1.0"
       }
+    },
+    {
+      "id": "mgu-light-net",
+      "kind": "tool",
+      "title": "Light Show Phone Port",
+      "version": "0.1.0",
+      "path": "native/light-net",
+      "mguHmi": [
+        "ID7"
+      ],
+      "uninstallable": true
     },
     {
       "id": "light_flasher",

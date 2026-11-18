@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Package the already built Light Show as an SDK-free MGU Store USB catalog.
 
-Run build.py light_show and test_light_show.js first. No network access.
+Run build.py light_show and tests/light_show.test.js first. No network access.
 """
 from pathlib import Path
 import gzip
@@ -68,10 +68,10 @@ def main():
     shutil.copyfile(APP / 'README.md', OUT / 'README.md')
     source = OUT / 'source'
     shutil.copytree(APP, source / 'apps' / 'light_show')
-    for file in ['test_light_show.js', 'package_light_show.py']:
-        dst = source / 'kit' / 'tools' / file
+    for rel in ['tests/light_show.test.js', 'kit/tools/package_light_show.py']:
+        dst = source / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(ROOT / 'kit' / 'tools' / file, dst)
+        shutil.copyfile(ROOT / rel, dst)
     shutil.copyfile(ROOT / 'LICENSE', OUT / 'LICENSE-idrive7-apps.txt')
     (OUT / 'SOURCE-NOTES.txt').write_text(
         'Base: https://github.com/cauliflowermossgrape/idrive7-apps\n'

@@ -1,452 +1,247 @@
 'use strict';
-const mgu = require('./kit/mgu');
+// Light Show 0.4 (beta): vehicle scan, every exterior light route the car offers, a show
+// library in the style of Bimmerlight, a 3D car on the BMW screen and a phone remote.
 const fs = require('fs');
 const path = require('path');
-const P = require('./protocol');
+const mgu = require('./kit/mgu');
+const G = require('./kit/gauges');
+const kitCanvas = require('./kit/canvas');
 const Link = require('./link');
 const Guard = require('./guard');
 const Journal = require('./journal');
-const Engine = require('./engine');
-const F = require('./flm-control');
-const LightProbe = require('./light-probe');
-const {ChannelLabels, PRESETS} = require('./channel-labels');
-const {ShowConfig, PATTERNS, PWM, PULSE, GAP, CYCLES} = require('./flm-show');
+const Runner = require('./runner');
+const Lamps = require('./lamps');
+const Effects = require('./effects');
+const Scan = require('./ecu-scan');
+const { Names, Observations, statusText } = require('./store');
+const { WebServer } = require('./web-server');
+const { makeUi, PAGE, LIGHTS_PER_PAGE, W, H } = require('./ui');
+
+const CONFIG_FILE = 'light-show-config.json';
+const DEFAULTS = { selection: [], effect: 'wigwag', stepMs: 500, gapMs: 100, cycles: 3, pwm: 60, allowExperimental: false };
+const next = (list, v) => list[(list.indexOf(v) + 1) % list.length];
 
 mgu.run({
     async start(ctx) {
-        const {ui,settings,log} = ctx;
+        const log = ctx.log;
+        const ui = makeUi(G, kitCanvas);
+        const names = new Names(ctx.dataDir);
+        const observations = new Observations(ctx.dataDir, log);
         const journal = new Journal(ctx.dataDir);
-        const lightProbe = new LightProbe();
-        const names = new ChannelLabels(ctx.dataDir);
-        const show = new ShowConfig(ctx.dataDir);
-        const observationsPath = path.join(ctx.dataDir,'light-show-observations.json');
-        let observations=[];
-        try {
-            const raw=JSON.parse(fs.readFileSync(observationsPath,'utf8'));
-            if(Array.isArray(raw)) observations=raw.filter(x=>x&&typeof x==='object').slice(-100);
-        } catch(e) { if(e.code!=='ENOENT')log.warn('Observation read: '+e.message); }
-        let engine,link,guard,selectedOutput=null,selectedSide='left';
-        let labelSide='left',labelChannel=1,editDraft='',charIndex=0;
-        let poolSide='left',lastLabelTestStatus='No test performed yet';
-        let lastStatus='',lastShowStatus='',lastDiagnostic='',hiddenTimer=null,lastResult='';
-        let confirmationReturn='DIAGNOSTICS',labelReturn='DIAGNOSTICS',flmReturn='MAIN';
-        
-        const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ0123456789 -_';
-        const flmConfig=()=>F.settings(Number(settings.get('flmPwm')),Number(settings.get('flmSeconds')));
-        const openConfirmation=(dest)=>{confirmationReturn=dest;return ui.open('CONFIRM_LIGHTS');};
-        const ensureIdle=()=>{if(engine.run)throw new Error('Stop the active lighting test first');};
-        const onFailure=(e)=>{
-            const msg=String(e&&e.message||e);
-            log.warn('Light Show UI: '+msg);
-            ui.text('STATUS','ERROR: '+msg);
-            if(ui.isVisible('POOL_CHANNELS'))ui.text('POOL_SIDE','Cannot select this LED: '+msg);
-            if(ui.isVisible('PLAYLIST'))ui.text('POOL_INFO','Playlist: '+msg);
-            if(ui.isVisible('SHOW_SETUP'))ui.text('SHOW_INFO','Cannot start or change show: '+msg);
-            if(ui.isVisible('LABEL_EDITOR')){
-                lastLabelTestStatus='TEST/NAME ERROR: '+msg;
-                updateEditor();
-            }
-        };
-        const observed=(side,c)=>names.status(observations,side,c);
-        const label=(side,c)=>names.label(side,c)+' ('+(side==='left'?'L':'R')+c+')';
-        const eligible=(side)=>names.eligible(observations,side);
-        const describe=(st)=>st==='visible'?'VISIBLE, no noise':st==='noise'?'NOISE - excluded':st==='not-visible'?'no visible effect':'not yet observed';
+        let profile = Scan.load(ctx.dataDir);
+        let config = Object.assign({}, DEFAULTS);
+        try { Object.assign(config, sanitize(JSON.parse(fs.readFileSync(path.join(ctx.dataDir, CONFIG_FILE), 'utf8')))); }
+        catch (e) { if (e.code !== 'ENOENT') log.warn('Light Show config: ' + e.message); }
 
-        const tokenLabel=(token)=>{
-            if(token==='OFF')return 'Dark pause';
-            const side=token[0]==='L'?'left':'right';
-            return label(side,Number(token.slice(1)));
-        };
-        const planLines=(plan)=>plan.steps.map((step,i)=>{
-            const active=[];
-            if(step.left)active.push(label('left',step.left));
-            if(step.right)active.push(label('right',step.right));
-            return (i+1)+'. '+(active.join(' + ')||'Dark pause')+
-                (active.length?' | approx. '+plan.pulseMs+'ms / '+plan.pwm+'%':'')+
-                ' | gap requested '+plan.gapMs+'ms';
-        }).join('\n');
-        function selectedLines() {
-            return show.state.playlist.map((tok,i)=>String(i+1).padStart(2,'0')+'. '+tokenLabel(tok)).join('\n');
-        }
-        function updateShow(){
-            const st=show.state;
-            let summary;
-            try {const p=show.plan(names,observations);
-                summary=p.steps.length+' steps | up to '+Math.round(p.steps.length*(p.pulseMs+p.gapMs)/1000)+' s nominal';
-            }catch(e){summary='Not ready: '+e.message;}
-            ui.text('SHOW_INFO','Pattern: '+st.pattern+' | '+summary+
-                '\n'+st.playlist.filter(tok=>tok!=='OFF').length+' selected LEDs (max 30).'+
-                '\nTASU is not precise: 200 ms is an approximate ON window, not measured light.');
-            ui.text('SHOW_SELECTED','Selected order:\n'+selectedLines());
-            [
-                ['BTN_SHOW_PATTERN','Pattern: '+st.pattern],
-                ['BTN_SHOW_POOL','Choose LEDs / order ('+st.playlist.length+' steps)'],
-                ['BTN_SHOW_PWM','Brightness: '+st.pwm+'%'],
-                ['BTN_SHOW_PULSE','ON: approx. '+st.pulseMs+' ms'],
-                ['BTN_SHOW_GAP','Dark gap: requested '+st.gapMs+' ms'],
-                ['BTN_SHOW_CYCLES','Cycles: '+st.cycles]
-            ].forEach(([id,msg])=>ui.text(id,msg));
-        }
-        function updatePool() {
-            ui.text('POOL_STATUS','LED playlist (up to 30 distinct channels):\n'+selectedLines()+
-                '\nTap Left/Right to add a tested LED; tap again to remove.\n'+
-                'Channel 13 right is blocked because an unusual noise was recorded.');
-            ui.text('POOL_INFO','Steps follow the order you add LEDs. Same-module LEDs run one after another.'+
-                '\nTogether pairs only LEFT and RIGHT channels; exact simultaneity not guaranteed.');
-        }
-        function updatePoolChannels(){
-            const side=poolSide,sel=new Set(show.state.playlist);
-            ui.text('POOL_SIDE',(side==='left'?'LEFT':'RIGHT')+' - tap to add/remove\n'+
-                'Only observed-visible/no-noise channels may be added.');
-            for(let ch=1;ch<=15;ch++){
-                const tok=(side==='left'?'L':'R')+ch;
-                ui.text('BTN_POOL_CH_'+ch.toString(16).toUpperCase().padStart(2,'0'),
-                    (sel.has(tok)?'REMOVE ':'ADD ')+tokenLabel(tok)+' ['+describe(observed(side,ch))+']');
-            }
-        }
-        function updateLabelChannels() {
-            ui.text('LABEL_SIDE',labelSide==='left'?'Left FLM02 - select LED to name':'Right FLM02 - select LED to name');
-            for(let c=1;c<=15;c++){
-                const id='BTN_LABEL_CH_'+c.toString(16).toUpperCase().padStart(2,'0');
-                ui.text(id,'Channel '+c+': '+names.label(labelSide,c)+' ['+describe(observed(labelSide,c))+']');
-            }
-        }
-        function updateManualChannels() {
-            ui.text('FLM_SIDE',selectedSide==='left'?'Left FLM02 (all 15 channels)':'Right FLM02 (all 15 channels)');
-            for(let c=1;c<=15;c++){
-                const id='BTN_FLM_CH_'+c.toString(16).toUpperCase().padStart(2,'0');
-                ui.text(id,'Channel '+c+': '+names.label(selectedSide,c)+' ['+describe(observed(selectedSide,c))+']');
-            }
-        }
-        function updateEditor(note) {
-            ui.text('LABEL_EDIT_INFO',(labelSide==='left'?'Left':'Right')+' FLM02 channel '+labelChannel+
-                '\nObserved: '+describe(observed(labelSide,labelChannel))+
-                '\nTEST this channel here, record its result, then assign a meaningful name.');
-            ui.text('LABEL_DRAFT','Name draft: '+(editDraft||'(empty)')+(note?'\n'+note:''));
-            ui.text('LABEL_CHAR','Next character: '+alphabet[charIndex]);
-            ui.text('LABEL_TEST_STATUS',lastLabelTestStatus);
-        }
-        function updateOverview() {
-            const lines=['USER OBSERVATIONS / NOT AN ECU LAMP MEASUREMENT',
-                'Animation uses only channels with a saved visible/no-noise observation and confirmed cleanup.',
-                'Right channel 13 had unusual noise and is excluded.',''];
-            for(const side of ['left','right']){
-                lines.push(side==='left'?'LEFT / FLM02_L':'RIGHT / FLM02_R');
-                for(let c=1;c<=15;c++)lines.push(
-                    '  '+c+'  '+names.label(side,c)+' — '+describe(observed(side,c)));
-                lines.push('');
-            }
-            ui.text('CHANNEL_OVERVIEW_TEXT',lines.join('\n'));
-        }
-        const changed=()=>{
-            if(engine && engine.run && ['STARTING','RUNNING'].includes(engine.state)){
-                const why=guard.reason();
-                if(why||!link.available)engine.stop(why||'FLM connection lost');
-            }
-            refresh();
-        };
-        guard=new Guard(Date.now,changed);
-        link=new Link(ctx.signals,log,changed);
-        engine=new Engine({link,guard,journal,log,changed:refresh});
-        function refresh() {
-            if(!engine)return;
-            const s=engine.status(),line=s.state+': '+s.note+
-                (s.state==='RUNNING'?' | '+s.remainingSeconds+'s remaining':'');
-            if(lastStatus!==line){lastStatus=line;ui.text('STATUS',line);}
-            const showLine=s.state==='RUNNING' && s.control.route==='flm_show'
-                ? 'Running step '+(s.control.stepIndex||'?')+'/'+s.control.stepsCount+' | '+s.note
-                : 'Show: '+s.state+' | '+s.note;
-            if(lastShowStatus!==showLine){lastShowStatus=showLine;ui.text('SHOW_PROGRESS',showLine);}
-            if(ui.isVisible('OUTPUT_OBSERVE')){
-                ui.text('OBSERVE_STATUS',line+
-                    '\nFLM02 replies are not physical lamp measurements.'+
-                    (journal.pending()?'\nRecovery lock pending; inspect normal lights before continuing.':''));
-                ui.text('OBSERVE_RECORDED',lastResult||'Record visible output or noise after the test.');
-            }
-        }
-        function diagnostics() {
-            const s=engine.status(),g=guard.snapshot();
-            const lines=[
-                'Light Show 0.3.4 - FLM02 animations and read-only light signal capture',
-                'State: '+s.state+' | '+s.note,
-                'TASU: '+(link.available?'available':'unavailable')+
-                    ' | BDC index: '+(link.index||'not read'),
-                'Speed: '+(g.speedKmh==null?'unknown':g.speedKmh.toFixed(2))+
-                    ' km/h | gear: '+(g.stage||'unknown')+' | blocked: '+(g.blockedBy||'no'),
-                'Recovery lock: '+(journal.pending()?'PENDING':'clear'),
-                'Route: '+s.control.route+' | stopped: '+s.stopConfirmed+
-                    ' | commands sent: '+s.sent,
-                'Cleanup: '+JSON.stringify(s.cleanup),
-                'Active/test PWM: '+settings.get('flmPwm')+'% / '+settings.get('flmSeconds')+'s',
-                'Show: '+JSON.stringify(show.state),
-                'Original fault: '+(engine.originalFault||'none'),
-                'Channel observations:'
-            ];
-            for(const side of ['left','right']){
-                lines.push(side.toUpperCase()+':');
-                for(let c=1;c<=15;c++)
-                    lines.push('  '+c+' '+names.label(side,c)+': '+describe(observed(side,c)));
-            }
-            lines.push('','Recent observations:');
-            observations.slice(-30).reverse().forEach(x=>lines.push(
-                x.at+' '+x.prg+' '+x.result+' | cleanup='+x.cleanupConfirmed));
-            lines.push('','Headlamp module reads:');
-            engine.headlamps.forEach(x=>lines.push(x.side+' '+x.name+' '+(x.index||'?')+' '+(x.highBeamRaw||'')));
-            lines.push('','Recent UDS messages:');
-            link.trace.slice(-25).forEach(x=>lines.push(x.at+' ['+P.hex([x.address])+'] '+x.tx+' => '+(x.rx||x.error||'')));
-            return lines.join('\n');
-        }
-        function saveLog() {
-            try {
-                let preview=null,previewError=null;
-                try {preview=show.plan(names,observations);}catch(e){previewError=e.message;}
-                const report={app:'light_show',version:'0.3.4',at:new Date().toISOString(),
-                    physicalEffectVerified:false, status:engine.status(),
-                    guard:guard.snapshot(),flmSettings:flmConfig(),
-                    lightSignalProbe:lightProbe.snapshot(),
-                    showSettings:show.state,showPlan:preview,showPlanError:previewError,
-                    channelMappings:names.snapshot(observations),
-                    recoveryPending:journal.pending(),bdcIndex:link.index,
-                    headlamps:engine.headlamps,originalFault:engine.originalFault,
-                    individualObservations:observations,
-                    outputSamples:engine.outputSamples,trace:link.trace};
-                const target=path.join(ctx.dataDir,'light-show-diagnostics.json');
-                fs.writeFileSync(target+'.tmp',JSON.stringify(report,null,2));
-                fs.renameSync(target+'.tmp',target);
-                ui.text('DIAG_TEXT',diagnostics()+'\n\nSaved: '+target);
-            }catch(e){
-                log.warn('Diagnostic export failed: '+e.message);
-                ui.text('DIAG_TEXT',diagnostics()+'\n\nExport ERROR: '+e.message);
-            }
-        }
-        function openShow(){updateShow();return ui.open('SHOW_SETUP');}
-        function previewShow(){
-            try {
-                const p=show.plan(names,observations);
-                ui.text('SHOW_PREVIEW_TEXT','FLM02 SHOW PREVIEW (NO LIGHT COMMANDS)\n'+
-                    'Pattern: '+p.pattern+'\nPWM '+p.pwm+'%, requested pulse '+p.pulseMs+
-                    'ms (approximate), requested dark gap '+p.gapMs+'ms\n'+planLines(p));
-            }catch(e){ui.text('SHOW_PREVIEW_TEXT','Cannot start: '+e.message+
-                '\nTest channels and record visible / no unusual noise first.');}
-            return ui.open('SHOW_PREVIEW');
-        }
-        function startShow(){
-            try {
-                ensureIdle();
-                const plan=show.plan(names,observations);
-                return engine.playFlmShow(plan);
-            } catch(e) {onFailure(e);return Promise.resolve();}
-        }
-        const handler=(id,fn)=>ui.onClick(id,()=>Promise.resolve().then(fn).catch(onFailure));
-        handler('BTN_SHOW_SETUP',openShow);
-        handler('BTN_SHOW_BACK',()=>ui.open('MAIN'));
-        handler('BTN_SHOW_PATTERN',()=>{ensureIdle();show.cycle('pattern',PATTERNS);updateShow();});
-        [['BTN_SHOW_PWM','pwm',PWM],['BTN_SHOW_PULSE','pulseMs',PULSE],
-         ['BTN_SHOW_GAP','gapMs',GAP],['BTN_SHOW_CYCLES','cycles',CYCLES]]
-            .forEach(([id,key,opts])=>handler(id,()=>{ensureIdle();show.cycle(key,opts);updateShow();}));
-        handler('BTN_SHOW_POOL',()=>{updatePool();return ui.open('PLAYLIST');});
-        handler('BTN_POOL_BACK',openShow);
-        [['BTN_POOL_LEFT','left'],['BTN_POOL_RIGHT','right']].forEach(([id,side])=>
-            handler(id,()=>{poolSide=side;updatePoolChannels();return ui.open('POOL_CHANNELS');}));
-        handler('BTN_POOL_CHANNEL_BACK',()=>{updatePool();return ui.open('PLAYLIST');});
-        for(let ch=1;ch<=15;ch++){
-            const id='BTN_POOL_CH_'+ch.toString(16).toUpperCase().padStart(2,'0');
-            handler(id,()=>{
-                ensureIdle();
-                const token=(poolSide==='left'?'L':'R')+ch;
-                show.toggle(token,names,observations);
-                updatePoolChannels();
-            });
-        }
-        handler('BTN_POOL_ADD_PAUSE',()=>{ensureIdle();show.appendOff();updatePool();});
-        handler('BTN_POOL_UNDO',()=>{ensureIdle();show.undo();updatePool();});
-        handler('BTN_POOL_RESET',()=>{ensureIdle();show.clear();updatePool();});
-        handler('BTN_SHOW_PREVIEW',previewShow);
-        handler('BTN_PREVIEW_BACK',openShow);
-        ['BTN_SHOW_START','BTN_PREVIEW_START'].forEach(id=>handler(id,startShow));
-        ['BTN_STOP','BTN_SHOW_STOP','BTN_PREVIEW_STOP','BTN_DIAG_STOP','BTN_OUTPUT_STOP']
-            .forEach(id=>handler(id,()=>engine.stop('Manual STOP')));
-        handler('BTN_DIAG',()=>{lastDiagnostic=diagnostics();ui.text('DIAG_TEXT',lastDiagnostic);return ui.open('DIAGNOSTICS');});
-        handler('BTN_EXPORT',saveLog);
-        function updateProbe(){
-            const p=lightProbe.snapshot();
-            ui.text('PROBE_STATUS',(p.active?'Recording':'Stopped')+' | '+p.reason+
-                ' | raw samples '+p.sampleCount+' | changes/markers '+p.events.length+
-                '\nRaw signal only; lever interpretation not verified.');
-            ui.text('PROBE_EVENTS',p.events.slice(-12).map(e=>e.ms+' ms '+e.kind+
-                ' '+JSON.stringify(e.value)).join('\n')||'No raw values or markers yet.');
-        }
-        handler('BTN_LIGHT_PROBE',()=>{updateProbe();return ui.open('LIGHT_PROBE');});
-        handler('BTN_PROBE_START',()=>{
-            ensureIdle();
-            if(journal.pending()||guard.reason())throw new Error('Park in P and resolve any pending light test first');
-            lightProbe.start();updateProbe();
-        });
-        [['BTN_PROBE_RELEASED','released'],['BTN_PROBE_PULLED','pulled'],
-         ['BTN_PROBE_HELD','held over 3s'],['BTN_PROBE_LATCHED','high beam latched']]
-            .forEach(([id,label])=>handler(id,()=>{lightProbe.mark(label);updateProbe();}));
-        handler('BTN_PROBE_STOP',()=>{lightProbe.stop();updateProbe();});
-        handler('BTN_PROBE_SAVE',()=>{lightProbe.stop();saveLog();return ui.open('DIAGNOSTICS');});
-        handler('BTN_PROBE_BACK',()=>{lightProbe.stop('Left capture screen');return ui.open('DIAGNOSTICS');});
-        handler('BTN_HEADLAMPS',async()=>{await engine.inspectHeadlamps();ui.text('DIAG_TEXT',diagnostics());});
-        handler('BTN_CHANNEL_OVERVIEW',()=>{updateOverview();return ui.open('CHANNEL_OVERVIEW');});
-        handler('BTN_OVERVIEW_BACK',()=>ui.open('DIAGNOSTICS'));
-        handler('BTN_OVERVIEW_LABEL',()=>{labelReturn='CHANNEL_OVERVIEW';return ui.open('LABEL_INDEX');});
-        handler('BTN_OVERVIEW_TEST',()=>{flmReturn='CHANNEL_OVERVIEW';return ui.open('FLM_INDEX');});
-        handler('BTN_FLM_DIAG',()=>{flmReturn='DIAGNOSTICS';return ui.open('FLM_INDEX');});
-        handler('BTN_FLM_BACK',()=>ui.open(flmReturn));
-        for(const side of ['left','right'])
-            handler('BTN_FLM_'+side.toUpperCase(),()=>{
-                selectedSide=side;updateManualChannels();return ui.open('FLM_CHANNELS');
-            });
-        handler('BTN_FLM_CHANNEL_BACK',()=>ui.open('FLM_INDEX'));
-        for(let c=1;c<=15;c++){
-            const id='BTN_FLM_CH_'+c.toString(16).toUpperCase().padStart(2,'0');
-            handler(id,async()=>{
-                ensureIdle();
-                const opts=flmConfig();
-                selectedOutput={route:'flm',side:selectedSide,channel:c,pwm:opts.pwm,seconds:opts.seconds,
-                    label:label(selectedSide,c),prg:F.MODULES[selectedSide].name+'_KANAL_'+c};
-                lastResult='';
-                ui.text('OBSERVE_NAME',selectedOutput.label+'\n'+opts.pwm+'% / '+opts.seconds+
-                    's | '+describe(observed(selectedSide,c)));
-                await ui.open('OUTPUT_OBSERVE');
-                await engine.testFlm(selectedSide,c,opts.pwm,opts.seconds);
-                refresh();
-            });
-        }
-        handler('BTN_OUTPUT_REPEAT',()=>{
-            if(!selectedOutput)return;
-            if(journal.pending())return openConfirmation('OUTPUT_OBSERVE');
-            return engine.testFlm(selectedOutput.side,selectedOutput.channel,
-                selectedOutput.pwm,selectedOutput.seconds);
-        });
-        handler('BTN_OUTPUT_CHECK_LIGHTS',()=>openConfirmation('OUTPUT_OBSERVE'));
-        handler('BTN_OUTPUT_BACK',async()=>{await engine.stop('Leaving individual test');updateManualChannels();return ui.open('FLM_CHANNELS');});
-        function observe(result) {
-            if(!selectedOutput)return;
-            if(engine.run){lastResult='Wait for the test to finish before saving.';refresh();return;}
-            const s=engine.status();
-            if(result==='visible, no unusual noise' && !(s.state==='IDLE' && s.stopConfirmed===true
-                && s.sent>0 && s.control.route==='flm' && s.control.side===selectedOutput.side
-                && s.control.channel===selectedOutput.channel && !journal.pending())) {
-                lastResult='Cannot mark as verified: no completed FLM02 test with confirmed StopRoutine.';
-                refresh();return;
-            }
-            const record={at:new Date().toISOString(),id:null,
-                prg:selectedOutput.prg,label:selectedOutput.label,result,
-                route:'flm',side:selectedOutput.side,channel:selectedOutput.channel,
-                pwm:selectedOutput.pwm,seconds:selectedOutput.seconds,
-                ecuState:s.state,ecuNote:s.note,cleanupConfirmed:s.stopConfirmed};
-            const next=observations.concat([record]).slice(-100);
-            fs.writeFileSync(observationsPath+'.tmp',JSON.stringify(next,null,2));
-            fs.renameSync(observationsPath+'.tmp',observationsPath);
-            observations=next;
-            lastResult='Recorded: '+result+' | '+describe(observed(selectedOutput.side,selectedOutput.channel));
-            refresh();
-        }
-        [['BTN_OUTPUT_VISIBLE','visible, no unusual noise'],
-         ['BTN_OUTPUT_VISIBLE_NOISE','visible and unusual noise'],
-         ['BTN_OUTPUT_NO_EFFECT','no visible effect, no noise'],
-         ['BTN_OUTPUT_NOISE','unusual noise without visible light']]
-            .forEach(([id,value])=>handler(id,()=>observe(value)));
-        handler('BTN_LABEL_HOME',()=>{labelReturn='MAIN';return ui.open('LABEL_INDEX');});
-        handler('BTN_LABEL_DIAG',()=>{labelReturn='DIAGNOSTICS';return ui.open('LABEL_INDEX');});
-        handler('BTN_LABEL_INDEX_BACK',()=>ui.open(labelReturn));
-        for(const side of ['left','right'])
-            handler('BTN_LABEL_'+side.toUpperCase(),()=>{
-                labelSide=side;updateLabelChannels();return ui.open('LABEL_CHANNELS');
-            });
-        handler('BTN_LABEL_CHANNEL_BACK',()=>ui.open('LABEL_INDEX'));
-        for(let c=1;c<=15;c++){
-            const id='BTN_LABEL_CH_'+c.toString(16).toUpperCase().padStart(2,'0');
-            handler(id,()=>{
-                ensureIdle();labelChannel=c;editDraft=names.name(labelSide,c);
-                charIndex=0;lastLabelTestStatus='Press TEST to identify this LED before naming it.';
-                updateEditor();return ui.open('LABEL_EDITOR');
-            });
-        }
-        for(let i=0;i<PRESETS.length;i++)
-            handler('BTN_LABEL_PRESET_'+(i+1),()=>{
-                ensureIdle();editDraft=PRESETS[i];names.set(labelSide,labelChannel,editDraft);
-                updateEditor('Saved preset: '+editDraft);
-            });
+        let page = PAGE.SHOW, lightsPage = 0, unitsPage = 0, selectedLamp = null, lastTested = null;
+        let showAll = false, groupFilter = null, notice = null, noticeAt = 0, yaw = 0.8, dirty = true;
+        const changed = () => { dirty = true; };
+        const say = (text) => { notice = text; noticeAt = Date.now(); changed(); };
 
-        handler('BTN_LABEL_TEST',async()=>{
-            ensureIdle();
-            if(journal.pending())throw new Error('Stop lock pending: check normal lights in Diagnostics first');
-            const opts=flmConfig();
-            selectedOutput={route:'flm',side:labelSide,channel:labelChannel,pwm:opts.pwm,
-                seconds:opts.seconds,label:label(labelSide,labelChannel),
-                prg:F.MODULES[labelSide].name+'_KANAL_'+labelChannel};
-            lastLabelTestStatus='Running '+labelSide+' channel '+labelChannel+
-                ' / '+opts.pwm+'% for '+opts.seconds+' s; STOP available.';
-            updateEditor();
-            await engine.testFlm(labelSide,labelChannel,opts.pwm,opts.seconds);
-            const st=engine.status();
-            lastLabelTestStatus=st.state+': '+st.note+
-                (st.stopConfirmed?'\nStopRoutine confirmed':'\nStop not confirmed: do not repeat');
-            updateEditor();
-        });
-        handler('BTN_LABEL_STOP',()=>engine.stop('STOP from name editor'));
-        [['BTN_LABEL_RESULT_VISIBLE','visible, no unusual noise'],
-         ['BTN_LABEL_RESULT_NO_EFFECT','no visible effect, no noise'],
-         ['BTN_LABEL_RESULT_VISIBLE_NOISE','visible and unusual noise'],
-         ['BTN_LABEL_RESULT_NOISE','unusual noise without visible light']]
-            .forEach(([id,value])=>handler(id,()=>{
-                if(!selectedOutput||selectedOutput.side!==labelSide||selectedOutput.channel!==labelChannel)
-                    throw new Error('Press TEST on this LED first');
-                observe(value);
-                lastLabelTestStatus=lastResult;
-                updateEditor();
-            }));
-        handler('BTN_LABEL_NEXT_CHAR',()=>{charIndex=(charIndex+1)%alphabet.length;updateEditor();});
-        handler('BTN_LABEL_APPEND_CHAR',()=>{if(editDraft.length>=24)throw Error('Maximum 24 characters');
-            editDraft+=alphabet[charIndex];updateEditor();});
-        handler('BTN_LABEL_DELETE_CHAR',()=>{editDraft=editDraft.slice(0,-1);updateEditor();});
-        handler('BTN_LABEL_CLEAR_DRAFT',()=>{editDraft='';updateEditor();});
-        handler('BTN_LABEL_SAVE',()=>{
-            ensureIdle();names.set(labelSide,labelChannel,editDraft);updateEditor('Name saved locally');
-        });
-        handler('BTN_LABEL_RESET',()=>{
-            ensureIdle();editDraft='';names.set(labelSide,labelChannel,'');updateEditor('Default channel label restored');
-        });
-        handler('BTN_LABEL_CANCEL',()=>{updateLabelChannels();return ui.open('LABEL_CHANNELS');});
-        handler('BTN_CLEAR_LOCK',()=>openConfirmation('DIAGNOSTICS'));
-        handler('BTN_CANCEL_CLEAR',()=>ui.open(confirmationReturn));
-        handler('BTN_CONFIRM_CLEAR',async()=>{
-            await engine.acknowledgeNormalLights();return ui.open(confirmationReturn);
-        });
-        settings.onChange(()=>{
-            if(engine.run)engine.stop('Manual FLM test settings changed');
-            refresh();
-        });
-        ui.onVisible(()=>{
-            clearTimeout(hiddenTimer);
-            hiddenTimer=setTimeout(()=>{
-                const pages=['MAIN','SHOW_SETUP','SHOW_PREVIEW','PLAYLIST','POOL_CHANNELS',
-                    'DIAGNOSTICS','LIGHT_PROBE','CHANNEL_OVERVIEW','LABEL_INDEX','LABEL_CHANNELS',
-                    'LABEL_EDITOR','FLM_INDEX','FLM_CHANNELS','OUTPUT_OBSERVE','CONFIRM_LIGHTS'];
-                if(!pages.some(name=>ui.isVisible(name))&&engine.run)engine.stop('App closed');
-            },250);
-        });
-        if(ctx.app&&ctx.app.on)ctx.app.on('shutdown',()=>engine.stop('Head unit shutting down'));
-        process.on('SIGTERM',()=>{engine.stop('App stopped').then(()=>process.exit(0));});
-        guard.init(ctx.signals,log,v=>lightProbe.feed(v)).catch(e=>log.warn('Light Show vehicle signals: '+e));
-        let recoveryTried=false;
-        const recover=()=>{
-            if(!recoveryTried&&journal.pending()&&link.available&&!engine.run){
-                recoveryTried=true;engine.stop('Recovering old or interrupted FLM02 show');
-            }
+        const guard = new Guard(Date.now, changed);
+        const link = new Link(ctx.signals, log, changed, { allowExperimental: () => config.allowExperimental });
+        const commOff = () => !!(ctx.settings && ctx.settings.get('flmCommOff'));
+        const runner = new Runner({ link, guard, journal, log, changed, commOff });
+        if (ctx.settings && typeof ctx.settings.onChange === 'function') ctx.settings.onChange(changed);
+
+        function sanitize(v) {
+            const out = {};
+            if (!v || typeof v !== 'object') return out;
+            if (Array.isArray(v.selection)) out.selection = v.selection.filter((id) => Lamps.parse(id)).slice(0, Effects.MAX_LAMPS);
+            if (Effects.EFFECTS.some((e) => e.id === v.effect)) out.effect = v.effect;
+            if (Effects.STEP_MS.indexOf(v.stepMs) >= 0) out.stepMs = v.stepMs;
+            if (Effects.GAP_MS.indexOf(v.gapMs) >= 0) out.gapMs = v.gapMs;
+            if (Effects.CYCLES.indexOf(v.cycles) >= 0) out.cycles = v.cycles;
+            if (Effects.PWM.indexOf(v.pwm) >= 0) out.pwm = v.pwm;
+            if (typeof v.allowExperimental === 'boolean') out.allowExperimental = v.allowExperimental;
+            return out;
+        }
+        function saveConfig(patch) {
+            const n = Object.assign({}, config, sanitize(patch));
+            n.selection = Array.from(new Set(n.selection));
+            const file = path.join(ctx.dataDir, CONFIG_FILE);
+            fs.writeFileSync(file + '.tmp', JSON.stringify(n));
+            fs.renameSync(file + '.tmp', file);
+            config = n; changed();
+            return config;
+        }
+        /** Catalog with test status; show-eligible = available and confirmed visible. */
+        function lamps() {
+            return Lamps.catalog(profile, names, { allowExperimental: config.allowExperimental }).map((l) => {
+                const status = observations.status(l.id);
+                return Object.assign(l, { status, statusText: statusText(status) });
+            });
+        }
+        function byId(list) { const m = {}; list.forEach((l) => { m[l.id] = l; }); return m; }
+        function currentPlan(list) {
+            const usable = list.filter((l) => l.available && l.status === 'visible');
+            const sel = config.selection.filter((id) => usable.some((l) => l.id === id));
+            if (!sel.length) return null;
+            try { return Effects.plan(sel, usable, config); }
+            catch (e) { return { error: e.message, notes: [], steps: [], estimateMs: 0 }; }
+        }
+
+        /* ---------- actions (car screen and phone share them) ---------- */
+        const actions = {
+            start() {
+                const list = lamps(), plan = currentPlan(list);
+                if (!plan) throw new Error('Pick tested lights for the show first');
+                if (plan.error) throw new Error(plan.error);
+                runner.play(plan, byId(list)).then((r) => { if (r && !r.ok && r.error) say(r.error); });
+                return { ok: true };
+            },
+            stop() { runner.stop('STOP pressed'); return { ok: true }; },
+            test(id, opts) {
+                const l = byId(lamps())[id];
+                if (!l) throw new Error('Unknown light');
+                if (!l.available) throw new Error(l.why || 'Light not available');
+                lastTested = id; selectedLamp = id;
+                runner.test(l, { pwm: config.pwm, ms: opts && opts.ms }).then((r) => { if (r && !r.ok && r.error) say(r.error); });
+                return { ok: true };
+            },
+            observe(id, result) {
+                const cleanup = runner.cleanup;
+                const clean = !!cleanup && !cleanup.errors.length;
+                observations.record(id, result, clean, { pwm: config.pwm, commOff: commOff() });
+                if (result !== 'visible' && config.selection.indexOf(id) >= 0) saveConfig({ selection: config.selection.filter((x) => x !== id) });
+                if (result === 'visible' && !clean) say('Saved, but the release was not confirmed: the light stays out of shows.');
+                lastTested = null; changed();
+                return { ok: true };
+            },
+            toggle(id) {
+                const sel = config.selection.slice(), i = sel.indexOf(id);
+                if (i >= 0) sel.splice(i, 1);
+                else {
+                    if (observations.status(id) !== 'visible') throw new Error('Test the light first: it must light up without noise');
+                    sel.push(id);
+                }
+                saveConfig({ selection: sel });
+                return { ok: true };
+            },
+            async scan() {
+                await runner.exclusive('SCANNING', 'Reading the identity of every control unit', async () => {
+                    const p = await Scan.scan(link, log, (text) => runner.update('SCANNING', text));
+                    Scan.save(ctx.dataDir, p);
+                    profile = p;
+                    runner.update('IDLE', 'Scan finished: ' + p.summary);
+                }).catch((e) => { runner.update('ERROR', 'Scan failed: ' + (e.message || e)); throw e; });
+                return { ok: true };
+            },
+            experimental(on) { saveConfig({ allowExperimental: !!on }); return { ok: true }; },
+            commOff(on) {
+                if (runner.status().busy) throw new Error('Stop the running show first');
+                ctx.settings.set('flmCommOff', !!on); changed();
+                return { ok: true };
+            },
         };
-        link.init().then(recover).catch(e=>log.warn('Light Show diagnostic init: '+e));
-        setInterval(()=>{
-            lightProbe.tick();
-            if(lightProbe.active && (guard.reason()||engine.run||!ui.isVisible('LIGHT_PROBE')))
-                lightProbe.stop('Vehicle state or screen changed');
-            if(ui.isVisible('LIGHT_PROBE'))updateProbe();
-            changed();recover();
-        },200);
-        refresh();
-    }
+
+        /* ---------- phone ---------- */
+        const server = new WebServer({
+            state() {
+                const list = lamps(), plan = currentPlan(list), r = runner.status();
+                return {
+                    version: ctx.spec && ctx.spec.version, guard: { ok: !guard.reason(), reason: guard.reason() || 'Parked' },
+                    runner: r, profile, allowExperimental: config.allowExperimental, commOff: commOff(),
+                    lamps: list.map((l) => ({ id: l.id, label: l.label, short: l.short, route: l.route, group: l.group, side: l.side,
+                        hex: l.hex, points: l.points, available: l.available, why: l.why, status: l.status, statusText: l.statusText,
+                        experimental: !!l.experimental || l.support === 'experimental', module: l.module })),
+                    effects: Effects.EFFECTS, options: { stepMs: Effects.STEP_MS, gapMs: Effects.GAP_MS, cycles: Effects.CYCLES, pwm: Effects.PWM },
+                    config: { selection: config.selection, effect: config.effect, stepMs: config.stepMs, gapMs: config.gapMs, cycles: config.cycles, pwm: config.pwm },
+                    plan: plan && { error: plan.error || null, steps: plan.steps.length * (plan.cycles || 1), estimateMs: plan.estimateMs, notes: plan.notes },
+                };
+            },
+            save(b) { saveConfig(b); return { ok: true }; },
+            show(b) { saveConfig(b); return actions.start(); },
+            test(b) { return actions.test(String(b.lamp), { ms: Number(b.ms) || 1000 }); },
+            observe(b) { return actions.observe(String(b.lamp), String(b.result)); },
+            name(b) { names.set(String(b.lamp), typeof b.name === 'string' ? b.name.trim() : ''); changed(); return { ok: true }; },
+            stop() { return actions.stop(); },
+            scan() { return actions.scan(); },
+            experimental(b) { return actions.experimental(b.on === true); },
+            commoff(b) { return actions.commOff(b.on === true); },
+        }, log);
+        try { server.start(); } catch (e) { log.warn('Light Show phone server: ' + e.message); }
+
+        /* ---------- car screen ---------- */
+        const run = (fn) => () => { try { const v = fn(); if (v && v.catch) v.catch((e) => say(String(e.message || e))); } catch (e) { say(String(e.message || e)); } changed(); };
+        const visibleList = () => lamps().filter((l) => (showAll || l.available) && (!groupFilter || l.group === groupFilter));
+        const a = {
+            effect: (id) => run(() => saveConfig({ effect: id }))(),
+            nextStep: run(() => saveConfig({ stepMs: next(Effects.STEP_MS, config.stepMs) })),
+            nextGap: run(() => saveConfig({ gapMs: next(Effects.GAP_MS, config.gapMs) })),
+            nextCycles: run(() => saveConfig({ cycles: next(Effects.CYCLES, config.cycles) })),
+            nextPwm: run(() => saveConfig({ pwm: next(Effects.PWM, config.pwm) })),
+            start: run(() => actions.start()),
+            stop: run(() => actions.stop()),
+            pickLamp: (id) => { selectedLamp = id; if (lastTested !== id) lastTested = null; changed(); },
+            test: run(() => actions.test(selectedLamp)),
+            observe: (r) => run(() => actions.observe(selectedLamp, r))(),
+            toggle: run(() => actions.toggle(selectedLamp)),
+            rename: run(() => { const n = names.cycle(selectedLamp); say(n ? 'Name: ' + n : 'Default name restored'); }),
+            toggleAll: run(() => { showAll = !showAll; lightsPage = 0; }),
+            nextGroup: run(() => { groupFilter = next([null, 'front', 'side', 'rear'], groupFilter); lightsPage = 0; }),
+            prevLights: run(() => { lightsPage = Math.max(0, lightsPage - 1); }),
+            nextLights: run(() => { lightsPage = Math.min(Math.max(0, Math.ceil(visibleList().length / LIGHTS_PER_PAGE) - 1), lightsPage + 1); }),
+            nextUnits: run(() => { unitsPage = profile && (unitsPage + 1) * 12 < profile.units.length ? unitsPage + 1 : 0; }),
+            scan: run(() => actions.scan()),
+            toggleExperimental: run(() => actions.experimental(!config.allowExperimental)),
+            toggleCommOff: run(() => actions.commOff(!commOff())),
+            acknowledge: run(() => runner.acknowledgeNormalLights()),
+        };
+        const open = (i) => { page = i; notice = null; changed(); };
+        if (typeof ctx.onTab === 'function') ctx.onTab((i) => open(i));
+        ctx.ui.onClick('BTN_START', a.start);
+        ctx.ui.onClick('BTN_STOP', a.stop);
+        ctx.ui.onClick('BTN_PAGE', () => open((page + 1) % 4));
+
+        function viewModel() {
+            const list = lamps(), r = runner.status(), why = guard.reason();
+            const shown = list.filter((l) => (showAll || l.available) && (!groupFilter || l.group === groupFilter));
+            if (selectedLamp && !shown.some((l) => l.id === selectedLamp)) selectedLamp = null;
+            if (!selectedLamp && shown.length) selectedLamp = shown[0].id;
+            const sel = new Set(config.selection), act = new Set(r.active);
+            if (notice && Date.now() - noticeAt > 8000) notice = null;
+            return {
+                page, yaw, allowed: !why, lockText: why, lock: why && /stationary|P \(Park\)/.test(why) ? 'moving' : 'signal',
+                runner: r, config, effects: Effects.EFFECTS, plan: currentPlan(list), profile, notice,
+                allowExperimental: config.allowExperimental, supportText: Scan.supportText, commOff: commOff(),
+                recoveryUnreadable: journal.pending() && !journal.control(),
+                lightList: shown, lightsPage, unitsPage, selectedLamp, lastTested, showAll, groupFilter,
+                carLamps: list.filter((l) => l.available && (sel.has(l.id) || act.has(l.id)))
+                    .map((l) => ({ points: l.points, hex: l.hex, on: act.has(l.id), dim: !act.has(l.id) })),
+                phone: { link: server.url(), ready: server.listening, listening: server.listening, error: server.error,
+                    net: server.net, port: server.port, connected: server.phoneConnected() },
+            };
+        }
+
+        guard.init(ctx.signals, log).catch((e) => log.warn('Light Show vehicle signals: ' + e));
+        let linkReady = false;
+        link.init().then(() => { linkReady = true; if (journal.pending()) return runner.stop('Releasing a run from before the restart'); })
+            .catch((e) => log.warn('Light Show diagnostic init: ' + e));
+
+        // First start: scan the car by itself once it is parked (read-only identities and
+        // vehicle order). Later scans only when the user asks for them.
+        const auto = { tries: 0, lastTryAt: 0 };
+        function autoScan() {
+            const st = runner.status();
+            if (!Scan.autoScanDue({ hasProfile: !!profile, guardOk: !guard.reason(), linkReady: linkReady && link.available,
+                busy: st.busy, recoveryPending: st.recoveryPending, tries: auto.tries, lastTryAt: auto.lastTryAt, now: Date.now() })) return;
+            auto.tries++; auto.lastTryAt = Date.now();
+            say('First start: scanning the control units (read-only)...');
+            actions.scan().then(() => say('Vehicle scanned: ' + profile.summary + '. Test the lights under LIGHTS.'),
+                (e) => say('Automatic scan failed (' + (e.message || e) + ')' + (auto.tries < Scan.AUTO_TRIES ? ', trying again in a minute.' : '. Use Scan vehicle on VEHICLE.')));
+        }
+
+        setInterval(() => { server.poll(); autoScan(); }, 1000);
+        let lastFrame = 0, lastDraw = 0;
+        ctx.loop('MAIN', 15, () => {
+            const now = Date.now();
+            const animate = page === PAGE.SHOW || page === PAGE.LIGHTS;
+            if (animate) yaw += (now - (lastFrame || now)) / 1000 * (runner.status().busy ? 0.45 : 0.25);
+            lastFrame = now;
+            if (!animate && !dirty && now - lastDraw < 1000) return undefined;
+            dirty = false; lastDraw = now;
+            return ctx.ui.image('MAIN_GFX', ui.draw(ctx.canvas(W, H), ctx.theme(), viewModel(), a));
+        });
+    },
 });
