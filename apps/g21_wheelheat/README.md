@@ -17,7 +17,7 @@ Automatically control the seat and steering-wheel heating on a compatible BMW. T
 
 ## Control-unit detection (0.5.x, experimental)
 
-Heating Comfort no longer assumes the G21 layout. Once the diagnostic connection is up, it reads
+Heating Comfort no longer assumes the G21 layout (background: issue #2, a G05 with separate seat modules). Once the diagnostic connection is up, it reads
 the standard BMW identification `22 F150` (read-only, no VIN, no serial numbers) from these addresses:
 
 | Address | Control unit | Used for |
