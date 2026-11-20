@@ -1,0 +1,227 @@
+{
+  "id": "gif_home",
+  "title": "GIF 首页组件",
+  "description": "在 iDrive 首页大磁贴中显示 GIF 动画，支持内置动画、手机扫码上传和显示设置。",
+  "version": "0.3.101",
+  "vendor": "custom",
+  "loggingId": "GFI1",
+  "iconGlyph": "GIF",
+  "signals": {},
+  "startWidget": {
+    "name": "GIF 首页组件",
+    "layout": "LT_Table_OnlineApps_DriveRecorderWidget",
+    "image": "BackgroundImage1",
+    "size": [
+      384,
+      256
+    ],
+    "safe": [
+      0.07,
+      0.07
+    ],
+    "cells": {
+      "Title": [
+        "",
+        "Text"
+      ],
+      "ErrorInfo": [
+        false,
+        "Bool"
+      ],
+      "background": [
+        false,
+        "Bool"
+      ],
+      "ProgressbarVisible": [
+        false,
+        "Bool"
+      ],
+      "TextRecordings": [
+        "",
+        "Text"
+      ],
+      "TextCam": [
+        "",
+        "Text"
+      ],
+      "TimeElapsed": [
+        "",
+        "Text"
+      ],
+      "TimeRemaining": [
+        "",
+        "Text"
+      ]
+    }
+  },
+  "screens": [
+    {
+      "name": "MAIN",
+      "kind": "canvas",
+      "title": "GIF 首页组件",
+      "buttons": [
+        [
+          "BTN_SOURCE",
+          "切换 GIF"
+        ],
+        [
+          "BTN_PHONE",
+          "手机上传"
+        ],
+        [
+          "BTN_NEXT",
+          "下一个地址"
+        ],
+        [
+          "BTN_RELOAD",
+          "重新加载 GIF"
+        ],
+        [
+          "BTN_HELP",
+          "小组件设置"
+        ],
+        [
+          "BTN_SETTINGS",
+          "设置"
+        ]
+      ]
+    }
+  ],
+  "settings": [
+    {
+      "key": "renderer",
+      "label": "应用显示模式",
+      "type": "choice",
+      "default": "software",
+      "options": [
+        [
+          "software",
+          "宝马原生显示（推荐）"
+        ],
+        [
+          "auto",
+          "GPU 渲染（实验性）"
+        ]
+      ]
+    },
+    {
+      "key": "source",
+      "label": "动画",
+      "type": "choice",
+      "default": "auto",
+      "options": [
+        [
+          "auto",
+          "优先使用自定义动画"
+        ],
+        [
+          "demo",
+          "动态宝马标志"
+        ],
+        [
+          "drift",
+          "像素漂移：夜城宝马"
+        ],
+        [
+          "sunset",
+          "像素驾驶：日落"
+        ],
+        [
+          "garage",
+          "像素画：霓虹车库"
+        ],
+        [
+          "tunnel",
+          "像素画：午夜疾驰"
+        ],
+        [
+          "custom",
+          "仅使用自定义 GIF"
+        ]
+      ]
+    },
+    {
+      "key": "fit",
+      "label": "图片适应方式",
+      "type": "choice",
+      "default": "contain",
+      "options": [
+        [
+          "cover",
+          "填满并裁切边缘"
+        ],
+        [
+          "contain",
+          "完整显示并保留黑边"
+        ]
+      ]
+    },
+    {
+      "key": "speed",
+      "label": "动画速度",
+      "type": "choice",
+      "default": "normal",
+      "options": [
+        [
+          "slow",
+          "半速"
+        ],
+        [
+          "normal",
+          "正常"
+        ],
+        [
+          "fast",
+          "1.5 倍速"
+        ]
+      ]
+    },
+    {
+      "key": "widgetFps",
+      "label": "小组件刷新率",
+      "type": "number",
+      "unit": "fps",
+      "default": 4,
+      "steps": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
+    },
+    {
+      "key": "widgetBackground",
+      "label": "原生小组件背景",
+      "type": "bool",
+      "default": false
+    },
+    {
+      "key": "widgetTone",
+      "label": "首页组件亮度",
+      "type": "choice",
+      "default": "balanced",
+      "options": [
+        [
+          "original",
+          "GIF 原始颜色"
+        ],
+        [
+          "balanced",
+          "提亮并补偿边缘"
+        ],
+        [
+          "strong",
+          "增强边缘补偿"
+        ]
+      ]
+    },
+    {
+      "key": "pause",
+      "label": "暂停动画",
+      "type": "bool",
+      "default": false
+    }
+  ]
+}

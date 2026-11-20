@@ -1,0 +1,11 @@
+{
+  "source": "https://github.com/JackieZ123430/namelsmissing-mgu-apps-cn",
+  "apps": {
+    "gif_home": {
+      "path": "apps/gif_home",
+      "kitRoot": ".",
+      "version": "0.3.101",
+      "upstreamVersion": "0.3.1"
+    }
+  }
+}
