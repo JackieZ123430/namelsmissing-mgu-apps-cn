@@ -4,7 +4,7 @@
     "gif_home": {
       "path": "apps/gif_home",
       "kitRoot": ".",
-      "version": "0.3.101",
+      "version": "0.3.102",
       "upstreamVersion": "0.3.1"
     }
   }

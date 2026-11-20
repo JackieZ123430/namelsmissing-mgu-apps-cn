@@ -2,7 +2,7 @@
   "id": "gif_home",
   "title": "GIF 首页组件",
   "description": "在 iDrive 首页大磁贴中显示 GIF 动画，支持内置动画、手机扫码上传和显示设置。",
-  "version": "0.3.101",
+  "version": "0.3.102",
   "vendor": "custom",
   "loggingId": "GFI1",
   "iconGlyph": "GIF",
