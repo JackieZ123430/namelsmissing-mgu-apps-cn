@@ -201,12 +201,12 @@
       ],
       "uninstallable": true,
       "author": "汉化 小白151",
-      "version": "0.3.101",
+      "version": "0.3.102",
       "artifact": {
-        "name": "gif_home@0.3.101.tgz",
-        "size": 1811277,
-        "sha256": "f3a02695287d9f3bbc4cf22ce1d84a8d4cd1dadd55deb8ce2fa74bc31774a7df",
-        "url": "https://github.com/JackieZ123430/MGU-CN-XIAOBAI/releases/download/source-refresh-2026-11-20/gif_home%400.3.101.tgz"
+        "name": "gif_home@0.3.102.tgz",
+        "size": 1816951,
+        "sha256": "3369b11cb6dab5d088d99bcceed76b261674bab14c3940e159f0034eacea414a",
+        "url": "https://github.com/JackieZ123430/MGU-CN-XIAOBAI/releases/download/widget-chinese-r2-2026-11-20/gif_home%400.3.102.tgz"
       },
       "requires": {
         "idrive7-renderd": "2.1.7",
